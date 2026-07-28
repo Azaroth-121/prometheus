@@ -4,40 +4,25 @@ export interface PayPalConfig {
   apiBase: string;
 }
 
-export interface PayPalProduct {
-  id: string;
-  name: string;
-}
-
-export interface PayPalBillingPlan {
-  id: string;
-  status: string;
-}
-
-export interface PayPalSubscriptionLink {
+export interface PayPalLink {
   href: string;
   rel: string;
   method: string;
 }
 
-export type PayPalSubscriptionStatus =
-  | 'APPROVAL_PENDING'
+export type PayPalOrderStatus =
+  | 'CREATED'
+  | 'SAVED'
   | 'APPROVED'
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'CANCELLED'
-  | 'EXPIRED';
+  | 'VOIDED'
+  | 'COMPLETED'
+  | 'PAYER_ACTION_REQUIRED';
 
-export interface PayPalSubscription {
+export interface PayPalOrder {
   id: string;
-  status: PayPalSubscriptionStatus;
-  plan_id: string;
-  subscriber?: { payer_id?: string; email_address?: string };
-  billing_info?: {
-    next_billing_time?: string;
-    last_payment?: { time: string };
-  };
-  links: PayPalSubscriptionLink[];
+  status: PayPalOrderStatus;
+  links: PayPalLink[];
+  payer?: { payer_id?: string; email_address?: string };
 }
 
 export interface VerifyWebhookInput {

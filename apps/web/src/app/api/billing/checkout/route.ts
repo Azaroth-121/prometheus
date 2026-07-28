@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentProfile } from '@prometheus/auth';
 import { createSupabaseServiceRoleClient } from '@prometheus/database';
-import { createSubscription } from '@prometheus/billing';
+import { createOrder } from '@prometheus/billing';
 import { createClient } from '@/lib/supabase/server';
 import { env } from '@/lib/env';
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     .eq('code', body.planCode)
     .single();
 
-  if (planError || !plan || !plan.provider_plan_id) {
+  if (planError || !plan || plan.monthly_price <= 0) {
     return NextResponse.json({ error: 'Plan is not available for checkout.' }, { status: 400 });
   }
 
@@ -42,13 +42,14 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    const subscription = await createSubscription(paypalConfig, {
-      planId: plan.provider_plan_id,
-      returnUrl: `${env.appUrl}/dashboard/billing/success`,
+    const order = await createOrder(paypalConfig, {
+      amount: plan.monthly_price.toFixed(2),
+      currency: plan.currency,
+      returnUrl: `${env.appUrl}/dashboard/billing/success?plan=${plan.code}`,
       cancelUrl: `${env.appUrl}/dashboard/billing`,
     });
 
-    const approveUrl = subscription.links.find((link) => link.rel === 'approve')?.href;
+    const approveUrl = order.links.find((link) => link.rel === 'approve')?.href;
     if (!approveUrl) {
       return NextResponse.json({ error: 'PayPal did not return an approval link.' }, { status: 502 });
     }
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ approve_url: approveUrl });
   } catch (err) {
     return NextResponse.json(
-      { error: 'Failed to create PayPal subscription.', detail: String(err) },
+      { error: 'Failed to create PayPal order.', detail: String(err) },
       { status: 502 },
     );
   }

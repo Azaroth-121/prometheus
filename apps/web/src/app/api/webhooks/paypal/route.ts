@@ -4,13 +4,6 @@ import { createSupabaseServiceRoleClient } from '@prometheus/database';
 import { verifyWebhookSignature } from '@prometheus/billing';
 import { env } from '@/lib/env';
 
-const SUBSCRIPTION_STATUS_MAP: Record<string, string> = {
-  'BILLING.SUBSCRIPTION.ACTIVATED': 'active',
-  'BILLING.SUBSCRIPTION.CANCELLED': 'canceled',
-  'BILLING.SUBSCRIPTION.SUSPENDED': 'past_due',
-  'BILLING.SUBSCRIPTION.EXPIRED': 'canceled',
-};
-
 /**
  * Requires PAYPAL_WEBHOOK_ID, which only exists once a webhook is
  * registered against a publicly reachable URL — not possible from
@@ -72,16 +65,9 @@ export async function POST(request: NextRequest) {
     .single();
 
   try {
-    const mappedStatus = SUBSCRIPTION_STATUS_MAP[event.event_type];
-    const subscriptionId = event.resource?.id;
-
-    if (mappedStatus && subscriptionId) {
-      await serviceClient
-        .from('subscriptions')
-        .update({ status: mappedStatus })
-        .eq('provider_subscription_id', subscriptionId);
-    }
-
+    // Activation itself happens synchronously in the redirect-back success
+    // page (payments are one-time, captured immediately) — this webhook is
+    // just the audit trail for PAYMENT.CAPTURE.COMPLETED and friends.
     if (webhookEventRow) {
       await serviceClient
         .from('webhook_events')

@@ -1,15 +1,14 @@
-import type {
-  PayPalBillingPlan,
-  PayPalConfig,
-  PayPalProduct,
-  PayPalSubscription,
-  VerifyWebhookInput,
-} from './types';
+import type { PayPalConfig, PayPalOrder, VerifyWebhookInput } from './types';
 
 /**
  * Thin REST wrapper around PayPal's API, not the official SDK — same call
  * as calling OpenAI directly in /api/v1/optimize: full control, predictable
  * behavior, and trivial to point at sandbox vs live via one config value.
+ *
+ * Uses the Orders API (one-time payments), not Subscriptions/Billing Plans —
+ * subscriptions require a "Reference Transactions" capability many PayPal
+ * Business accounts don't have enabled and can't self-enable, which blocked
+ * checkout entirely. Orders need no special capability.
  */
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -58,71 +57,26 @@ async function paypalFetch<T>(config: PayPalConfig, path: string, init?: Request
   return (await response.json()) as T;
 }
 
-export async function createProduct(
+export async function createOrder(
   config: PayPalConfig,
-  input: { name: string; description: string },
-): Promise<PayPalProduct> {
-  return paypalFetch(config, '/v1/catalogs/products', {
+  input: { amount: string; currency: string; returnUrl: string; cancelUrl: string },
+): Promise<PayPalOrder> {
+  return paypalFetch(config, '/v2/checkout/orders', {
     method: 'POST',
     body: JSON.stringify({
-      name: input.name,
-      description: input.description,
-      type: 'SERVICE',
-      category: 'SOFTWARE',
-    }),
-  });
-}
-
-export async function createBillingPlan(
-  config: PayPalConfig,
-  input: { productId: string; name: string; monthlyPrice: string; currency: string },
-): Promise<PayPalBillingPlan> {
-  return paypalFetch(config, '/v1/billing/plans', {
-    method: 'POST',
-    body: JSON.stringify({
-      product_id: input.productId,
-      name: input.name,
-      billing_cycles: [
-        {
-          frequency: { interval_unit: 'MONTH', interval_count: 1 },
-          tenure_type: 'REGULAR',
-          sequence: 1,
-          total_cycles: 0,
-          pricing_scheme: {
-            fixed_price: { value: input.monthlyPrice, currency_code: input.currency },
-          },
-        },
-      ],
-      payment_preferences: {
-        auto_bill_outstanding: true,
-        payment_failure_threshold: 3,
-      },
-    }),
-  });
-}
-
-export async function createSubscription(
-  config: PayPalConfig,
-  input: { planId: string; returnUrl: string; cancelUrl: string },
-): Promise<PayPalSubscription> {
-  return paypalFetch(config, '/v1/billing/subscriptions', {
-    method: 'POST',
-    body: JSON.stringify({
-      plan_id: input.planId,
+      intent: 'CAPTURE',
+      purchase_units: [{ amount: { currency_code: input.currency, value: input.amount } }],
       application_context: {
         return_url: input.returnUrl,
         cancel_url: input.cancelUrl,
-        user_action: 'SUBSCRIBE_NOW',
+        user_action: 'PAY_NOW',
       },
     }),
   });
 }
 
-export async function getSubscription(
-  config: PayPalConfig,
-  subscriptionId: string,
-): Promise<PayPalSubscription> {
-  return paypalFetch(config, `/v1/billing/subscriptions/${subscriptionId}`, { method: 'GET' });
+export async function captureOrder(config: PayPalConfig, orderId: string): Promise<PayPalOrder> {
+  return paypalFetch(config, `/v2/checkout/orders/${orderId}/capture`, { method: 'POST' });
 }
 
 export async function verifyWebhookSignature(

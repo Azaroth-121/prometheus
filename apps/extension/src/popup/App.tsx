@@ -8,15 +8,24 @@ import { supabase } from '../lib/supabase';
 
 const MODES: OptimizationMode[] = ['standard', 'image', 'code'];
 
-// Mirrors packages/billing/src/plans.ts — placeholder pricing.
+// Mirrors packages/billing/src/plans.ts — placeholder pricing. Each
+// payment is one-time (30 days of access), not a recurring subscription.
 const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
+
+const WEB_APP_URL = 'https://prometheus-azaroth.vercel.app';
+const SETTINGS_SITE_URL = 'https://soveraign.solutions/prometheus/';
+
+type Tab = 'optimize' | 'billing' | 'settings';
+const TABS: Tab[] = ['optimize', 'billing', 'settings'];
 
 export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignedIn, setIsSignedIn] = useState<boolean | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [tab, setTab] = useState<Tab>('optimize');
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<OptimizationMode>('standard');
@@ -26,9 +35,13 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setIsSignedIn(Boolean(data.session)));
+    supabase.auth.getSession().then(({ data }) => {
+      setIsSignedIn(Boolean(data.session));
+      setUserEmail(data.session?.user.email ?? null);
+    });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsSignedIn(Boolean(session));
+      setUserEmail(session?.user.email ?? null);
     });
     return () => subscription.subscription.unsubscribe();
   }, []);
@@ -48,6 +61,7 @@ export default function App() {
     await signOut(supabase);
     setResult(null);
     setError(null);
+    setTab('optimize');
   }
 
   async function handleOptimize(event: FormEvent) {
@@ -116,82 +130,123 @@ export default function App() {
 
       {isSignedIn === true && (
         <Card className="flex flex-col gap-3">
-          <form className="flex flex-col gap-2" onSubmit={handleOptimize}>
-            <select
-              className="rounded border border-gray-300 px-2 py-1 text-sm"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as OptimizationMode)}
-            >
-              {MODES.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="h-24 w-full rounded border border-gray-300 p-2 text-sm"
-              placeholder="Paste your rough prompt..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              required
-            />
-            <Button type="submit" disabled={busy || input.trim().length === 0}>
-              {busy ? 'Optimizing…' : 'Optimize'}
-            </Button>
-          </form>
+          <div className="flex gap-1 border-b border-gray-100 pb-2 text-xs">
+            {TABS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`rounded px-2 py-1 capitalize ${
+                  tab === t ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          {result && (
-            <div className="flex flex-col gap-2 rounded border border-gray-200 p-2 text-sm">
-              <p className="whitespace-pre-wrap">{result.optimized_prompt}</p>
-              {result.upgrade_notes.length > 0 && (
-                <ul className="list-disc pl-4 text-xs text-gray-600">
-                  {result.upgrade_notes.map((note, i) => (
-                    <li key={i}>{note}</li>
+          {tab === 'optimize' && (
+            <>
+              <form className="flex flex-col gap-2" onSubmit={handleOptimize}>
+                <select
+                  className="rounded border border-gray-300 px-2 py-1 text-sm"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as OptimizationMode)}
+                >
+                  {MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
                   ))}
-                </ul>
+                </select>
+                <textarea
+                  className="h-24 w-full rounded border border-gray-300 p-2 text-sm"
+                  placeholder="Paste your rough prompt..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  required
+                />
+                <Button type="submit" disabled={busy || input.trim().length === 0}>
+                  {busy ? 'Optimizing…' : 'Optimize'}
+                </Button>
+              </form>
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
+
+              {result && (
+                <div className="flex flex-col gap-2 rounded border border-gray-200 p-2 text-sm">
+                  <p className="whitespace-pre-wrap">{result.optimized_prompt}</p>
+                  {result.upgrade_notes.length > 0 && (
+                    <ul className="list-disc pl-4 text-xs text-gray-600">
+                      {result.upgrade_notes.map((note, i) => (
+                        <li key={i}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <Button type="button" variant="secondary" onClick={handleCopy}>
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                  <p className="text-xs text-gray-500">
+                    {result.usage.remaining_requests} requests remaining
+                  </p>
+                </div>
               )}
-              <Button type="button" variant="secondary" onClick={handleCopy}>
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <p className="text-xs text-gray-500">
-                {result.usage.remaining_requests} requests remaining
+            </>
+          )}
+
+          {tab === 'billing' && (
+            <div className="flex flex-col gap-2 text-xs">
+              <p className="text-gray-600">
+                Each payment is one-time and grants 30 days of access — pay again anytime to
+                extend.
               </p>
+              {UPGRADE_TIERS.map((tier) => (
+                <a
+                  key={tier.price}
+                  href={`${WEB_APP_URL}/dashboard/billing`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-between rounded border border-brand-500 px-2 py-1.5 text-brand-700 hover:bg-brand-50"
+                >
+                  <span>${tier.price} / 30 days</span>
+                  <span>Pay →</span>
+                </a>
+              ))}
             </div>
           )}
 
-          <div className="flex flex-col gap-2 border-t border-gray-100 pt-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-gray-500">Upgrade:</span>
-              <div className="flex gap-1">
-                {UPGRADE_TIERS.map((tier) => (
-                  <a
-                    key={tier.price}
-                    href="https://prometheus-azaroth.vercel.app/dashboard/billing"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded border border-brand-500 px-2 py-0.5 text-brand-700 hover:bg-brand-50"
-                  >
-                    ${tier.price}
-                  </a>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
+          {tab === 'settings' && (
+            <div className="flex flex-col gap-2 text-xs">
+              <p className="text-gray-600">Signed in as</p>
+              <p className="text-sm font-medium">{userEmail ?? 'unknown'}</p>
               <a
-                href="https://soveraign.solutions/prometheus/"
+                href={`${WEB_APP_URL}/dashboard/settings`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-brand-700 hover:underline"
               >
-                Settings
+                Account settings
               </a>
-              <button type="button" onClick={handleSignOut} className="text-gray-500 hover:underline">
+              <a
+                href={`${WEB_APP_URL}/dashboard/faqs`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-700 hover:underline"
+              >
+                FAQs
+              </a>
+              <a href={SETTINGS_SITE_URL} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">
+                Visit our site
+              </a>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="mt-1 text-left text-gray-500 hover:underline"
+              >
                 Sign out
               </button>
             </div>
-          </div>
+          )}
         </Card>
       )}
     </div>

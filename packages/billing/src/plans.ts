@@ -13,7 +13,13 @@ export interface BillingPlanDefinition {
  * Placeholder tiers (plan doc section 9: Free/Pro, Team deferred). Pricing
  * is explicitly a placeholder — the doc says not to finalize pricing until
  * OpenAI cost, PayPal fees, and margin are modeled. This is tested against
- * a live PayPal account, so every test subscription is a real charge.
+ * a live PayPal account, so every test payment is a real charge.
+ *
+ * Each paid tier is a one-time payment (PayPal Orders API) granting 30 days
+ * of access, not a recurring subscription — PayPal Subscriptions require a
+ * "Reference Transactions" capability most Business accounts don't have
+ * enabled by default. See packages/billing/src/access.ts for how the
+ * 30-day window is tracked and expired.
  */
 export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
   {

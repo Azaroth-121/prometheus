@@ -169,6 +169,10 @@ importers:
         version: 5.9.3
 
   packages/billing:
+    dependencies:
+      '@supabase/supabase-js':
+        specifier: ^2.47.0
+        version: 2.110.9
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
