@@ -8,5 +8,5 @@
     "default_title": "Prometheus"
   },
   "permissions": ["storage"],
-  "host_permissions": ["http://localhost:3000/*"]
+  "host_permissions": ["http://localhost:3000/*", "https://prometheus-azaroth.vercel.app/*"]
 }

@@ -8,6 +8,9 @@ import { supabase } from '../lib/supabase';
 
 const MODES: OptimizationMode[] = ['standard', 'image', 'code'];
 
+// Mirrors packages/billing/src/plans.ts — placeholder pricing.
+const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
+
 export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -158,21 +161,36 @@ export default function App() {
             </div>
           )}
 
-          <div className="flex items-center justify-between text-xs">
-            <Button type="button" variant="ghost" disabled title="Billing isn't wired up yet">
-              Upgrade
-            </Button>
-            <a
-              href="http://localhost:3000/dashboard"
-              target="_blank"
-              rel="noreferrer"
-              className="text-brand-700 hover:underline"
-            >
-              Settings
-            </a>
-            <button type="button" onClick={handleSignOut} className="text-gray-500 hover:underline">
-              Sign out
-            </button>
+          <div className="flex flex-col gap-2 border-t border-gray-100 pt-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500">Upgrade:</span>
+              <div className="flex gap-1">
+                {UPGRADE_TIERS.map((tier) => (
+                  <a
+                    key={tier.price}
+                    href="https://prometheus-azaroth.vercel.app/dashboard/billing"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded border border-brand-500 px-2 py-0.5 text-brand-700 hover:bg-brand-50"
+                  >
+                    ${tier.price}
+                  </a>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <a
+                href="https://soveraign.solutions/prometheus/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-brand-700 hover:underline"
+              >
+                Settings
+              </a>
+              <button type="button" onClick={handleSignOut} className="text-gray-500 hover:underline">
+                Sign out
+              </button>
+            </div>
           </div>
         </Card>
       )}
