@@ -1,0 +1,38 @@
+{
+  "name": "@prometheus/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.47.0",
+    "openai": "^4.77.0",
+    "@prometheus/shared-types": "workspace:*",
+    "@prometheus/database": "workspace:*",
+    "@prometheus/auth": "workspace:*",
+    "@prometheus/ui": "workspace:*",
+    "@prometheus/prompts": "workspace:*",
+    "@prometheus/validation": "workspace:*",
+    "@prometheus/billing": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "tailwindcss": "^3.4.15",
+    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.16.0",
+    "eslint-config-next": "^15.1.0"
+  }
+}

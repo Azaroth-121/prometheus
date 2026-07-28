@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Prometheus",
+  "version": "0.0.1",
+  "description": "Turn a rough request into a structured, copy-ready prompt.",
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "Prometheus"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:3000/*"]
+}
