@@ -118,9 +118,19 @@ export default function App() {
               required
             />
             {authError && <p className="text-sm text-red-600">{authError}</p>}
-            <Button type="submit" disabled={authBusy}>
-              {authBusy ? 'Signing in…' : 'Sign in'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={authBusy} className="flex-1">
+                {authBusy ? 'Signing in…' : 'Sign in'}
+              </Button>
+              <a
+                href={`${WEB_APP_URL}/register`}
+                target="_blank"
+                rel="noreferrer"
+                className="whitespace-nowrap text-sm text-brand-700 hover:underline"
+              >
+                Sign up
+              </a>
+            </div>
           </form>
           <p className="text-xs text-gray-500">
             Prometheus never executes your request — it only returns an improved prompt.
