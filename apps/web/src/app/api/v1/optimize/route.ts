@@ -11,14 +11,13 @@ import {
 } from '@prometheus/shared-types';
 import { requireRole } from '@prometheus/auth';
 import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { checkUsageLimit } from '@prometheus/billing';
 import { buildSystemPrompt, PROMETHEUS_MODEL, PROMETHEUS_OUTPUT_JSON_SCHEMA, PROMETHEUS_PROMPT_VERSION } from '@prometheus/prompts';
 import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { env } from '@/lib/env';
 
 // Placeholder until plans.maximum_input_length exists (Phase 4).
 const MAX_INPUT_LENGTH = 4000;
-// Placeholder until plans/subscriptions/usage_periods are wired up (Phase 4) — effectively unmetered until then.
-const PLACEHOLDER_REMAINING_REQUESTS = 999_999;
 // Approximate gpt-4o-mini rates — validate against current OpenAI pricing before relying on this for real billing.
 const PRICE_PER_1K_INPUT_TOKENS = 0.00015;
 const PRICE_PER_1K_OUTPUT_TOKENS = 0.0006;
@@ -80,6 +79,16 @@ export async function POST(request: NextRequest) {
     requireRole(profile, USER_ROLES);
   } catch {
     return respondError(requestId, 403, 'ACCOUNT_INACTIVE', 'This account is not active.');
+  }
+
+  const usage = await checkUsageLimit(serviceClient, profile.id);
+  if (!usage.allowed) {
+    return respondError(
+      requestId,
+      403,
+      'USAGE_LIMIT_REACHED',
+      'Your optimization allowance has been used. Upgrade or wait for it to reset.',
+    );
   }
 
   const { error: insertError } = await serviceClient.from('optimization_requests').insert({
@@ -162,7 +171,7 @@ export async function POST(request: NextRequest) {
     request_id: requestId,
     optimized_prompt: output.improved_prompt,
     upgrade_notes: output.upgrade_notes,
-    usage: { remaining_requests: PLACEHOLDER_REMAINING_REQUESTS },
+    usage: { remaining_requests: Math.max(usage.remaining - 1, 0) },
   });
 }
 
