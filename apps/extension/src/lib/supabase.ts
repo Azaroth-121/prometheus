@@ -1,20 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * chrome.storage.local isn't page-scriptable (unlike localStorage), so it's
- * a reasonable session store for the popup without needing the full
- * web-app-handoff auth flow from the plan doc's section 5.1.
+ * Chrome storage keeps extension sessions isolated. localStorage is a fallback
+ * for local preview and test environments where the extension API is absent.
  */
 const chromeStorageAdapter = {
   async getItem(key: string) {
-    const result = await chrome.storage.local.get(key);
+    if (!globalThis.chrome?.storage?.local) return globalThis.localStorage.getItem(key);
+    const result = await globalThis.chrome.storage.local.get(key);
     return (result[key] as string | undefined) ?? null;
   },
   async setItem(key: string, value: string) {
-    await chrome.storage.local.set({ [key]: value });
+    if (!globalThis.chrome?.storage?.local) {
+      globalThis.localStorage.setItem(key, value);
+      return;
+    }
+    await globalThis.chrome.storage.local.set({ [key]: value });
   },
   async removeItem(key: string) {
-    await chrome.storage.local.remove(key);
+    if (!globalThis.chrome?.storage?.local) {
+      globalThis.localStorage.removeItem(key);
+      return;
+    }
+    await globalThis.chrome.storage.local.remove(key);
   },
 };
 
