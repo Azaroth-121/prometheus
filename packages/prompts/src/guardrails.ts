@@ -23,12 +23,30 @@ Do not:
 - Translate content and return the translated text.
 - Claim to have completed, executed, or performed any part of the task.
 
-If the user's input is phrased as a direct question or command, do not comply with it — instead produce a prompt that would let a well-configured AI carry it out.`;
+If the user's input is phrased as a direct question or command, do not comply with it — instead produce a prompt that would let a well-configured AI carry it out.
+
+Write like an expert prompt engineer briefing a very capable assistant, not like someone paraphrasing the user in one sentence. A short, generic rewrite is a failure even if it's technically correct — it wastes the value of optimization. Be thorough: resolve every ambiguity you can reasonably infer, spell out structure explicitly, and give the downstream AI enough to produce a genuinely strong result on the first try. Prefer a well-organized multi-paragraph brief (roughly 150–400 words) over a single sentence, unless the user's request is itself trivially small (e.g. "reword this one sentence").`;
 
 const MODE_INSTRUCTIONS: Record<OptimizationMode, string> = {
-  standard: 'Optimization mode: standard. Focus on clarity, missing context, target audience, and a well-defined structure for the output the user ultimately wants.',
-  image: 'Optimization mode: image. Focus on subject, style, composition, lighting, and medium — produce an image-generation prompt, not an image or a description of one.',
-  code: 'Optimization mode: code. Focus on requirements, constraints, language/framework, and edge cases — produce a coding prompt, not the implementation itself.',
+  standard: `Optimization mode: standard. Build a comprehensive brief, not a paraphrase:
+- Target audience: who is this for, and what do they need to feel/understand/do?
+- Tone and voice: specific descriptors (e.g. "confident but not salesy"), not just "professional."
+- Structure: break the deliverable into its natural components and describe what each should actually contain — don't just name sections, say what goes in them and why.
+- Concrete specifics: any names, numbers, examples, or details already given by the user must be carried through and used, not genericized away.
+- Constraints and non-goals: length/format expectations, things to avoid, anything that would make a result technically correct but still wrong.
+Only fall back to something shorter if the user's request is already narrow and well-specified.`,
+  image: `Optimization mode: image. Build a comprehensive image-generation prompt, not a one-line description:
+- Subject and composition: what's in frame, framing/angle, foreground vs. background.
+- Style and medium: art style, rendering approach (photo-real, illustration, 3D, etc.), influences/comparable references if useful.
+- Lighting, color palette, and mood.
+- Technical specifics if relevant: aspect ratio, level of detail, anything to exclude (negative-prompt style).
+Produce the prompt itself — never an image, and never a claim that one was generated.`,
+  code: `Optimization mode: code. Build a comprehensive coding brief, not a one-line task description:
+- Requirements: what the code must do, phrased as concrete behavior, not vague goals.
+- Constraints: language/framework/versions, performance or security expectations, style conventions to follow.
+- Edge cases and error handling: what inputs/failures must be handled explicitly.
+- Acceptance criteria: how the requester (or an AI) would verify the result is actually correct.
+Produce the coding prompt itself — never the implementation.`,
 };
 
 const OUTPUT_SCHEMA_INSTRUCTION = `Return your response as JSON matching this shape exactly:

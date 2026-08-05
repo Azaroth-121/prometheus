@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { signInWithPassword, signOut } from '@prometheus/auth';
 import type { OptimizationMode, OptimizeSuccessResponse } from '@prometheus/shared-types';
 import { isOptimizeError } from '@prometheus/shared-types';
-import { Button, Card, Input } from '@prometheus/ui';
 import { optimize } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
 
-const MODES: OptimizationMode[] = ['standard', 'image', 'code'];
+const MODES = ['standard', 'image', 'code'] as const satisfies readonly OptimizationMode[];
 
 // Mirrors packages/billing/src/plans.ts — placeholder pricing. Each
 // payment is one-time (30 days of access), not a recurring subscription.
@@ -15,8 +16,30 @@ const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
 const WEB_APP_URL = 'https://prometheus-azaroth.vercel.app';
 const SETTINGS_SITE_URL = 'https://soveraign.solutions/prometheus/';
 
-type Tab = 'optimize' | 'billing' | 'settings';
-const TABS: Tab[] = ['optimize', 'billing', 'settings'];
+const TABS = ['optimize', 'billing', 'settings'] as const;
+type Tab = (typeof TABS)[number];
+
+const fadeSlide = {
+  initial: { opacity: 0, y: 4 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -4 },
+  transition: { duration: 0.15 },
+};
+
+function LoadingDots() {
+  return (
+    <span className="flex items-center justify-center gap-1 py-0.5">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="h-1.5 w-1.5 rounded-full bg-white"
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }}
+        />
+      ))}
+    </span>
+  );
+}
 
 export default function App() {
   const [email, setEmail] = useState('');
@@ -97,11 +120,19 @@ export default function App() {
   }
 
   return (
-    <div className="w-80 p-4">
-      <h1 className="mb-3 text-lg font-semibold">Prometheus</h1>
+    <div className="min-h-full w-80 bg-void bg-radial-glow p-4">
+      <div className="mb-4 flex items-center gap-2">
+        <Glow className="h-2.5 w-2.5" />
+        <h1
+          className="text-base font-semibold tracking-wide text-ink"
+          style={{ textShadow: '0 0 14px rgba(59,130,246,0.45)' }}
+        >
+          Prometheus
+        </h1>
+      </div>
 
       {isSignedIn === false && (
-        <Card className="flex flex-col gap-3">
+        <Panel className="flex flex-col gap-3">
           <form className="flex flex-col gap-2" onSubmit={handleSignIn}>
             <Input
               type="email"
@@ -117,8 +148,8 @@ export default function App() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            {authError && <p className="text-sm text-red-600">{authError}</p>}
-            <div className="flex items-center gap-2">
+            {authError && <p className="text-sm text-red-400">{authError}</p>}
+            <div className="flex items-center gap-3">
               <Button type="submit" disabled={authBusy} className="flex-1">
                 {authBusy ? 'Signing in…' : 'Sign in'}
               </Button>
@@ -126,138 +157,127 @@ export default function App() {
                 href={`${WEB_APP_URL}/register`}
                 target="_blank"
                 rel="noreferrer"
-                className="whitespace-nowrap text-sm text-brand-700 hover:underline"
+                className="whitespace-nowrap text-sm text-glow-cyan hover:underline"
               >
                 Sign up
               </a>
             </div>
           </form>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-ink-muted">
             Prometheus never executes your request — it only returns an improved prompt.
           </p>
-        </Card>
+        </Panel>
       )}
 
       {isSignedIn === true && (
-        <Card className="flex flex-col gap-3">
-          <div className="flex gap-1 border-b border-gray-100 pb-2 text-xs">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={`rounded px-2 py-1 capitalize ${
-                  tab === t ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+        <Panel className="flex flex-col gap-3">
+          <SegmentedControl options={TABS} value={tab} onChange={setTab} layoutId="main-tab" />
 
-          {tab === 'optimize' && (
-            <>
-              <form className="flex flex-col gap-2" onSubmit={handleOptimize}>
-                <select
-                  className="rounded border border-gray-300 px-2 py-1 text-sm"
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value as OptimizationMode)}
-                >
-                  {MODES.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <textarea
-                  className="h-24 w-full rounded border border-gray-300 p-2 text-sm"
-                  placeholder="Paste your rough prompt..."
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  required
-                />
-                <Button type="submit" disabled={busy || input.trim().length === 0}>
-                  {busy ? 'Optimizing…' : 'Optimize'}
-                </Button>
-              </form>
-
-              {error && <p className="text-sm text-red-600">{error}</p>}
-
-              {result && (
-                <div className="flex flex-col gap-2 rounded border border-gray-200 p-2 text-sm">
-                  <p className="whitespace-pre-wrap">{result.optimized_prompt}</p>
-                  {result.upgrade_notes.length > 0 && (
-                    <ul className="list-disc pl-4 text-xs text-gray-600">
-                      {result.upgrade_notes.map((note, i) => (
-                        <li key={i}>{note}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <Button type="button" variant="secondary" onClick={handleCopy}>
-                    {copied ? 'Copied' : 'Copy'}
+          <AnimatePresence mode="wait">
+            {tab === 'optimize' && (
+              <motion.div key="optimize" {...fadeSlide} className="flex flex-col gap-3">
+                <form className="flex flex-col gap-2" onSubmit={handleOptimize}>
+                  <SegmentedControl options={MODES} value={mode} onChange={setMode} layoutId="mode" />
+                  <TextArea
+                    placeholder="Paste your rough prompt..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    required
+                  />
+                  <Button type="submit" disabled={busy || input.trim().length === 0} className="w-full">
+                    {busy ? <LoadingDots /> : 'Optimize'}
                   </Button>
-                  <p className="text-xs text-gray-500">
-                    {result.usage.remaining_requests} requests remaining
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+                </form>
 
-          {tab === 'billing' && (
-            <div className="flex flex-col gap-2 text-xs">
-              <p className="text-gray-600">
-                Each payment is one-time and grants 30 days of access — pay again anytime to
-                extend.
-              </p>
-              {UPGRADE_TIERS.map((tier) => (
+                {error && <p className="text-sm text-red-400">{error}</p>}
+
+                <AnimatePresence>
+                  {result && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-3 text-sm"
+                    >
+                      <p className="whitespace-pre-wrap text-ink">{result.optimized_prompt}</p>
+                      {result.upgrade_notes.length > 0 && (
+                        <ul className="list-disc pl-4 text-xs text-ink-muted">
+                          {result.upgrade_notes.map((note, i) => (
+                            <li key={i}>{note}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <Button variant="secondary" onClick={handleCopy}>
+                        {copied ? 'Copied ✓' : 'Copy'}
+                      </Button>
+                      <p className="text-xs text-ink-muted">
+                        {result.usage.remaining_requests} requests remaining
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )}
+
+            {tab === 'billing' && (
+              <motion.div key="billing" {...fadeSlide} className="flex flex-col gap-2 text-xs">
+                <p className="text-ink-muted">
+                  Each payment is one-time and grants 30 days of access — pay again anytime to
+                  extend.
+                </p>
+                {UPGRADE_TIERS.map((tier) => (
+                  <a
+                    key={tier.price}
+                    href={`${WEB_APP_URL}/dashboard/billing`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2 text-ink transition-all hover:border-glow/60 hover:shadow-glow-sm"
+                  >
+                    <span>
+                      ${tier.price} <span className="text-ink-muted">/ 30 days</span>
+                    </span>
+                    <span className="text-glow-cyan transition-transform group-hover:translate-x-0.5">
+                      Pay →
+                    </span>
+                  </a>
+                ))}
+              </motion.div>
+            )}
+
+            {tab === 'settings' && (
+              <motion.div key="settings" {...fadeSlide} className="flex flex-col gap-2 text-xs">
+                <p className="text-ink-muted">Signed in as</p>
+                <p className="text-sm font-medium text-ink">{userEmail ?? 'unknown'}</p>
                 <a
-                  key={tier.price}
-                  href={`${WEB_APP_URL}/dashboard/billing`}
+                  href={`${WEB_APP_URL}/dashboard/settings`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-between rounded border border-brand-500 px-2 py-1.5 text-brand-700 hover:bg-brand-50"
+                  className="text-glow-cyan hover:underline"
                 >
-                  <span>${tier.price} / 30 days</span>
-                  <span>Pay →</span>
+                  Account settings
                 </a>
-              ))}
-            </div>
-          )}
-
-          {tab === 'settings' && (
-            <div className="flex flex-col gap-2 text-xs">
-              <p className="text-gray-600">Signed in as</p>
-              <p className="text-sm font-medium">{userEmail ?? 'unknown'}</p>
-              <a
-                href={`${WEB_APP_URL}/dashboard/settings`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-brand-700 hover:underline"
-              >
-                Account settings
-              </a>
-              <a
-                href={`${WEB_APP_URL}/dashboard/faqs`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-brand-700 hover:underline"
-              >
-                FAQs
-              </a>
-              <a href={SETTINGS_SITE_URL} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">
-                Visit our site
-              </a>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="mt-1 text-left text-gray-500 hover:underline"
-              >
-                Sign out
-              </button>
-            </div>
-          )}
-        </Card>
+                <a
+                  href={`${WEB_APP_URL}/dashboard/faqs`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-glow-cyan hover:underline"
+                >
+                  FAQs
+                </a>
+                <a
+                  href={SETTINGS_SITE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-glow-cyan hover:underline"
+                >
+                  Visit our site
+                </a>
+                <Button variant="ghost" onClick={handleSignOut} className="mt-1 self-start text-left">
+                  Sign out
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Panel>
       )}
     </div>
   );

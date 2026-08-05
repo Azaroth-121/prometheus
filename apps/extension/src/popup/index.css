@@ -1,3 +1,25 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+body {
+  background: #05070d;
+  color: #e8edf7;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+/* Thin, dark, blue-tinted scrollbar — the default one looks jarring on a near-black popup. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1c2438 transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1c2438;
+  border-radius: 999px;
+}

@@ -11,10 +11,10 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "motion": "^11.15.0",
     "@supabase/supabase-js": "^2.47.0",
     "@prometheus/shared-types": "workspace:*",
-    "@prometheus/auth": "workspace:*",
-    "@prometheus/ui": "workspace:*"
+    "@prometheus/auth": "workspace:*"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
