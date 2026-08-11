@@ -5,6 +5,7 @@ import type { OptimizeMessage, OptimizeMessageResponse } from '../background';
 
 const MIN_LENGTH = 12;
 const DEBOUNCE_MS = 900;
+const RESPONSE_TIMEOUT_MS = 25_000;
 
 function init() {
   const adapter = getActiveSiteAdapter();
@@ -28,7 +29,22 @@ function init() {
       client_request_id: crypto.randomUUID(),
     };
 
+    // background.ts should always sendResponse (success, error, or a caught
+    // exception), but there's no built-in timeout on the other end of
+    // sendMessage — if it ever doesn't, this is what stops the spinner from
+    // running forever instead of leaving the user staring at "Optimizing…".
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      overlay.showError('This is taking too long. Please try again.');
+    }, RESPONSE_TIMEOUT_MS);
+
     chrome.runtime.sendMessage(message, (response: OptimizeMessageResponse) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+
       if (!response?.ok) {
         overlay.showError(
           response?.error === 'NOT_SIGNED_IN'

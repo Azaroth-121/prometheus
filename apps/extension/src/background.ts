@@ -94,40 +94,43 @@ function isOptimizeMessage(message: unknown): message is OptimizeMessage {
   return typeof message === 'object' && message !== null && (message as { type?: unknown }).type === 'OPTIMIZE_REQUEST';
 }
 
+async function handleOptimizeMessage(message: OptimizeMessage): Promise<OptimizeMessageResponse> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) {
+    return { ok: false, error: 'NOT_SIGNED_IN' };
+  }
+
+  const apiResponse = await fetch(`${API_BASE_URL}/api/v1/optimize`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      input: message.input,
+      source: message.source,
+      mode: message.mode,
+      page_context: message.page_context,
+      client_request_id: message.client_request_id,
+    }),
+  });
+  const data = (await apiResponse.json()) as OptimizeResponse;
+  return { ok: true, data };
+}
+
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (!isOptimizeMessage(message)) return undefined;
 
-  (async () => {
-    const accessToken = await getAccessToken();
-    if (!accessToken) {
-      const response: OptimizeMessageResponse = { ok: false, error: 'NOT_SIGNED_IN' };
-      sendResponse(response);
-      return;
-    }
-
-    try {
-      const apiResponse = await fetch(`${API_BASE_URL}/api/v1/optimize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          input: message.input,
-          source: message.source,
-          mode: message.mode,
-          page_context: message.page_context,
-          client_request_id: message.client_request_id,
-        }),
-      });
-      const data = (await apiResponse.json()) as OptimizeResponse;
-      const response: OptimizeMessageResponse = { ok: true, data };
-      sendResponse(response);
-    } catch (err) {
-      const response: OptimizeMessageResponse = { ok: false, error: 'NETWORK_ERROR', detail: String(err) };
-      sendResponse(response);
-    }
-  })();
+  // A rejection anywhere above (storage, refresh, fetch, JSON parsing) that
+  // isn't caught here means sendResponse never fires, and the content
+  // script's callback simply hangs forever — there's no timeout on the
+  // other end of chrome.runtime.sendMessage. Wrapping the whole thing is
+  // what actually matters, not catching each failure mode individually.
+  handleOptimizeMessage(message)
+    .catch(
+      (err): OptimizeMessageResponse => ({ ok: false, error: 'NETWORK_ERROR', detail: String(err) }),
+    )
+    .then(sendResponse);
 
   return true; // keep the message channel open for the async sendResponse above
 });
