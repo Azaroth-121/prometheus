@@ -113,9 +113,39 @@ export function createOverlay(): PrometheusOverlay {
   let badgeClickHandler: (() => void) | null = null;
   badge.addEventListener('click', () => badgeClickHandler?.());
 
+  let lastAnchor: DOMRect | null = null;
+  const OFFSET_Y = 8;
+
   function position(el: HTMLElement, anchor: DOMRect, offsetY: number) {
     el.style.left = `${Math.max(8, anchor.left)}px`;
     el.style.top = `${anchor.bottom + offsetY}px`;
+  }
+
+  /**
+   * The badge often sits near the bottom of the viewport (chat composers are
+   * typically pinned there), so anchoring the card below it — like a normal
+   * tooltip — pushes it off-screen. Measure the card's real size first, then
+   * flip above the anchor when there isn't room below, and clamp
+   * horizontally so it never runs past the right edge either.
+   */
+  function positionCard(anchor: DOMRect) {
+    card.style.visibility = 'hidden';
+    card.style.display = 'block';
+
+    const cardHeight = card.offsetHeight;
+    const cardWidth = card.offsetWidth;
+
+    const spaceBelow = window.innerHeight - anchor.bottom;
+    const top =
+      spaceBelow >= cardHeight + OFFSET_Y
+        ? anchor.bottom + OFFSET_Y
+        : Math.max(8, anchor.top - cardHeight - OFFSET_Y);
+
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - cardWidth - 8));
+
+    card.style.top = `${top}px`;
+    card.style.left = `${left}px`;
+    card.style.visibility = 'visible';
   }
 
   function attachClose() {
@@ -124,6 +154,7 @@ export function createOverlay(): PrometheusOverlay {
 
   const overlay: PrometheusOverlay = {
     showBadge(anchor) {
+      lastAnchor = anchor;
       position(badge, anchor, 6);
       badge.style.display = 'flex';
     },
@@ -137,8 +168,7 @@ export function createOverlay(): PrometheusOverlay {
         <div class="row"><span class="spinner"></span> Optimizing…</div>
       `;
       attachClose();
-      position(card, badge.getBoundingClientRect(), 8);
-      card.style.display = 'block';
+      if (lastAnchor) positionCard(lastAnchor);
       badge.style.display = 'none';
     },
     showResult(prompt, notes, onReplace) {
@@ -165,7 +195,7 @@ export function createOverlay(): PrometheusOverlay {
         const copyBtn = card.querySelector('.copy');
         if (copyBtn) copyBtn.textContent = 'Copied ✓';
       });
-      card.style.display = 'block';
+      if (lastAnchor) positionCard(lastAnchor);
     },
     showError(message) {
       card.innerHTML = `
@@ -174,7 +204,7 @@ export function createOverlay(): PrometheusOverlay {
         <p class="error">${escapeHtml(message)}</p>
       `;
       attachClose();
-      card.style.display = 'block';
+      if (lastAnchor) positionCard(lastAnchor);
     },
     hide() {
       card.style.display = 'none';

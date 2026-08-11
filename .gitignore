@@ -16,6 +16,10 @@ build/
 
 # extension build artifacts
 apps/extension/.output/
+apps/extension/*.zip
+# the natural default extraction target for prometheus-extension.zip — keep
+# it out of the source tree entirely (it broke `eslint .` once already)
+apps/extension/prometheus-extension/
 
 # editor/os
 .DS_Store
