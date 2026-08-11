@@ -70,3 +70,14 @@ export interface PrometheusModelOutput {
     execution_risk: boolean;
   };
 }
+
+/** Contract for GET /api/v1/usage. */
+export interface UsageSummary {
+  plan_code: string;
+  plan_name: string;
+  expires_at: string | null;
+  requests_used: number;
+  requests_limit: number;
+  tokens_used: number;
+  tokens_limit: number;
+}

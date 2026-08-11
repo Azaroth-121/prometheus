@@ -170,6 +170,9 @@ importers:
 
   packages/billing:
     dependencies:
+      '@prometheus/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       '@supabase/supabase-js':
         specifier: ^2.47.0
         version: 2.110.9

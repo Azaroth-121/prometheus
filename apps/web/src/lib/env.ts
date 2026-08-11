@@ -34,4 +34,10 @@ export const env = {
   get appUrl() {
     return required('NEXT_PUBLIC_APP_URL', process.env.NEXT_PUBLIC_APP_URL);
   },
+  get cronSecret() {
+    return required('CRON_SECRET', process.env.CRON_SECRET);
+  },
+  get makeExpiryWebhookUrl() {
+    return required('MAKE_EXPIRY_WEBHOOK_URL', process.env.MAKE_EXPIRY_WEBHOOK_URL);
+  },
 };

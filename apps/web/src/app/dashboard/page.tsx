@@ -2,6 +2,7 @@ import { getCurrentProfile } from '@prometheus/auth';
 import { getCurrentPlanInfo } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
 import { createClient } from '@/lib/supabase/server';
+import { UsageCard } from './usage-card';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -20,10 +21,11 @@ export default async function DashboardPage() {
         <p className="font-medium">{plan?.planName ?? 'Free'}</p>
         {plan?.expiresAt && (
           <p className="text-sm text-gray-500">
-            Renews/expires {new Date(plan.expiresAt).toLocaleDateString()}
+            Access until {new Date(plan.expiresAt).toLocaleDateString()}
           </p>
         )}
       </Card>
+      {profile && <UsageCard supabase={supabase} userId={profile.id} />}
     </div>
   );
 }

@@ -11,13 +11,11 @@ import {
 } from '@prometheus/shared-types';
 import { requireRole } from '@prometheus/auth';
 import { createSupabaseServiceRoleClient } from '@prometheus/database';
-import { checkUsageLimit } from '@prometheus/billing';
+import { checkUsageAgainstPlan, getCurrentPlanInfo } from '@prometheus/billing';
 import { buildSystemPrompt, PROMETHEUS_MODEL, PROMETHEUS_OUTPUT_JSON_SCHEMA, PROMETHEUS_PROMPT_VERSION } from '@prometheus/prompts';
 import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { env } from '@/lib/env';
 
-// Placeholder until plans.maximum_input_length exists (Phase 4).
-const MAX_INPUT_LENGTH = 4000;
 // Approximate gpt-4o-mini rates — validate against current OpenAI pricing before relying on this for real billing.
 const PRICE_PER_1K_INPUT_TOKENS = 0.00015;
 const PRICE_PER_1K_OUTPUT_TOKENS = 0.0006;
@@ -59,9 +57,6 @@ export async function POST(request: NextRequest) {
   if (!body.client_request_id || typeof body.client_request_id !== 'string') {
     return respondError(requestId, 400, 'INVALID_REQUEST', '"client_request_id" is required.');
   }
-  if (body.input.length > MAX_INPUT_LENGTH) {
-    return respondError(requestId, 400, 'INPUT_TOO_LONG', `Input exceeds ${MAX_INPUT_LENGTH} characters.`);
-  }
 
   const serviceClient = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
 
@@ -81,13 +76,26 @@ export async function POST(request: NextRequest) {
     return respondError(requestId, 403, 'ACCOUNT_INACTIVE', 'This account is not active.');
   }
 
-  const usage = await checkUsageLimit(serviceClient, profile.id);
+  const planInfo = await getCurrentPlanInfo(serviceClient, profile.id);
+
+  if (body.input.length > planInfo.maximumInputLength) {
+    return respondError(
+      requestId,
+      400,
+      'INPUT_TOO_LONG',
+      `Input exceeds your plan's ${planInfo.maximumInputLength}-character limit.`,
+    );
+  }
+
+  const usage = await checkUsageAgainstPlan(serviceClient, profile.id, planInfo);
   if (!usage.allowed) {
     return respondError(
       requestId,
       403,
       'USAGE_LIMIT_REACHED',
-      'Your optimization allowance has been used. Upgrade or wait for it to reset.',
+      usage.exceeded === 'tokens'
+        ? "Your plan's token allowance has been used for this period. Upgrade or wait for it to reset."
+        : 'Your optimization allowance has been used. Upgrade or wait for it to reset.',
     );
   }
 
@@ -171,7 +179,7 @@ export async function POST(request: NextRequest) {
     request_id: requestId,
     optimized_prompt: output.improved_prompt,
     upgrade_notes: output.upgrade_notes,
-    usage: { remaining_requests: Math.max(usage.remaining - 1, 0) },
+    usage: { remaining_requests: Math.max(usage.remainingRequests - 1, 0) },
   });
 }
 

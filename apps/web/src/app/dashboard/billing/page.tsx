@@ -2,6 +2,7 @@ import { getCurrentProfile } from '@prometheus/auth';
 import { getCurrentPlanInfo } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
 import { createClient } from '@/lib/supabase/server';
+import { UsageCard } from '../usage-card';
 import { PlanCards } from './plan-cards';
 
 export default async function BillingPage() {
@@ -27,6 +28,7 @@ export default async function BillingPage() {
           </p>
         )}
       </Card>
+      {profile && <UsageCard supabase={supabase} userId={profile.id} />}
       <p className="text-center text-2xl font-bold text-brand-700">
         Donate to Kurt for being a goodboy 🐶
       </p>

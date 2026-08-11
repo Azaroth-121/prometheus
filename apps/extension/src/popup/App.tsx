@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { signInWithPassword, signOut } from '@prometheus/auth';
-import type { OptimizationMode, OptimizeSuccessResponse } from '@prometheus/shared-types';
+import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
 import { isOptimizeError } from '@prometheus/shared-types';
-import { optimize } from '../lib/api';
+import { getUsage, optimize } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
 
@@ -49,6 +49,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [tab, setTab] = useState<Tab>('optimize');
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<OptimizationMode>('standard');
@@ -68,6 +69,13 @@ export default function App() {
     });
     return () => subscription.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'settings' || !isSignedIn) return;
+    getUsage()
+      .then(setUsage)
+      .catch(() => setUsage(null));
+  }, [tab, isSignedIn]);
 
   async function handleSignIn(event: FormEvent) {
     event.preventDefault();
@@ -247,6 +255,52 @@ export default function App() {
               <motion.div key="settings" {...fadeSlide} className="flex flex-col gap-2 text-xs">
                 <p className="text-ink-muted">Signed in as</p>
                 <p className="text-sm font-medium text-ink">{userEmail ?? 'unknown'}</p>
+
+                {usage && (
+                  <div className="mt-1 flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-ink">{usage.plan_name} plan</span>
+                      {usage.expires_at && (
+                        <span className="text-ink-muted">
+                          until {new Date(usage.expires_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between">
+                        <span className="text-ink-muted">Requests</span>
+                        <span className="text-ink-muted">
+                          {usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-glow-cyan"
+                          style={{
+                            width: `${Math.min((usage.requests_used / Math.max(usage.requests_limit, 1)) * 100, 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between">
+                        <span className="text-ink-muted">Tokens</span>
+                        <span className="text-ink-muted">
+                          {usage.tokens_used.toLocaleString()} / {usage.tokens_limit.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-glow-cyan"
+                          style={{
+                            width: `${Math.min((usage.tokens_used / Math.max(usage.tokens_limit, 1)) * 100, 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <a
                   href={`${WEB_APP_URL}/dashboard/settings`}
                   target="_blank"
