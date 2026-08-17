@@ -1,6 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { getUsageSummary } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
+import { db } from '@/lib/db';
 
 function ProgressBar({ used, limit }: { used: number; limit: number }) {
   const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
@@ -11,14 +11,8 @@ function ProgressBar({ used, limit }: { used: number; limit: number }) {
   );
 }
 
-export async function UsageCard({
-  supabase,
-  userId,
-}: {
-  supabase: SupabaseClient;
-  userId: string;
-}) {
-  const usage = await getUsageSummary(supabase, userId);
+export async function UsageCard({ userId }: { userId: string }) {
+  const usage = await getUsageSummary(db, userId);
 
   return (
     <Card className="flex flex-col gap-3">

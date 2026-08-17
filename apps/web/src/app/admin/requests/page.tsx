@@ -1,5 +1,7 @@
+import { desc, eq } from 'drizzle-orm';
+import { optimizationRequests } from '@prometheus/database';
 import { Card } from '@prometheus/ui';
-import { createClient } from '@/lib/supabase/server';
+import { db } from '@/lib/db';
 
 export default async function AdminRequestsPage({
   searchParams,
@@ -7,17 +9,27 @@ export default async function AdminRequestsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status } = await searchParams;
-  const supabase = await createClient();
 
-  let query = supabase
-    .from('optimization_requests')
-    .select('id, user_id, source, mode, status, error_code, latency_ms, created_at, completed_at')
-    .order('created_at', { ascending: false })
+  const requests = await db
+    .select({
+      id: optimizationRequests.id,
+      userId: optimizationRequests.userId,
+      source: optimizationRequests.source,
+      mode: optimizationRequests.mode,
+      status: optimizationRequests.status,
+      errorCode: optimizationRequests.errorCode,
+      latencyMs: optimizationRequests.latencyMs,
+      createdAt: optimizationRequests.createdAt,
+      completedAt: optimizationRequests.completedAt,
+    })
+    .from(optimizationRequests)
+    .where(
+      status === 'pending' || status === 'succeeded' || status === 'failed'
+        ? eq(optimizationRequests.status, status)
+        : undefined
+    )
+    .orderBy(desc(optimizationRequests.createdAt))
     .limit(50);
-  if (status) {
-    query = query.eq('status', status);
-  }
-  const { data: requests } = await query;
 
   return (
     <div className="flex flex-col gap-4">
@@ -39,28 +51,26 @@ export default async function AdminRequestsPage({
         </a>
       </form>
       <Card className="flex flex-col divide-y p-0">
-        {(requests ?? []).map((r) => (
+        {requests.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-4 p-4 text-sm">
             <div>
               <p className="font-medium">
                 {r.mode} · {r.source}
               </p>
               <p className="text-gray-600">
-                {new Date(r.created_at).toLocaleString()}
-                {r.latency_ms != null ? ` · ${r.latency_ms}ms` : ''}
+                {r.createdAt.toLocaleString()}
+                {r.latencyMs != null ? ` · ${r.latencyMs}ms` : ''}
               </p>
             </div>
             <div className="text-right">
               <p className={r.status === 'failed' ? 'font-medium text-red-600' : 'font-medium'}>
                 {r.status}
               </p>
-              {r.error_code && <p className="text-gray-600">{r.error_code}</p>}
+              {r.errorCode && <p className="text-gray-600">{r.errorCode}</p>}
             </div>
           </div>
         ))}
-        {(requests ?? []).length === 0 && (
-          <p className="p-4 text-sm text-gray-600">No requests found.</p>
-        )}
+        {requests.length === 0 && <p className="p-4 text-sm text-gray-600">No requests found.</p>}
       </Card>
     </div>
   );

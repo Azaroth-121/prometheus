@@ -2,45 +2,41 @@
 
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { eq } from 'drizzle-orm';
 import { getCurrentProfile, requireAdmin } from '@prometheus/auth';
-import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { profiles, adminAuditLogs } from '@prometheus/database';
 import type { AccountStatus } from '@prometheus/shared-types';
-import { createClient } from '@/lib/supabase/server';
-import { env } from '@/lib/env';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
 
 export async function setUserStatusAction(formData: FormData) {
   const userId = String(formData.get('userId'));
   const nextStatus = String(formData.get('nextStatus')) as AccountStatus;
   const reason = String(formData.get('reason') ?? '').trim();
 
-  const supabase = await createClient();
-  const actorProfile = requireAdmin(await getCurrentProfile(supabase));
+  const session = await auth();
+  const actorProfile = requireAdmin(session?.user?.id ? await getCurrentProfile(db, session.user.id) : null);
 
-  const { data: targetProfile, error: targetError } = await supabase
-    .from('profiles')
-    .select('id, status')
-    .eq('id', userId)
-    .single();
-  if (targetError || !targetProfile) {
+  const [targetProfile] = await db
+    .select({ id: profiles.id, status: profiles.status })
+    .from(profiles)
+    .where(eq(profiles.id, userId))
+    .limit(1);
+  if (!targetProfile) {
     throw new Error('User not found.');
   }
 
-  const { error: updateError } = await supabase
-    .from('profiles')
-    .update({ status: nextStatus })
-    .eq('id', userId);
-  if (updateError) throw updateError;
+  await db.update(profiles).set({ status: nextStatus }).where(eq(profiles.id, userId));
 
-  const serviceClient = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const ipAddress = (await headers()).get('x-forwarded-for');
-  await serviceClient.from('admin_audit_logs').insert({
-    admin_user_id: actorProfile.id,
+  await db.insert(adminAuditLogs).values({
+    adminUserId: actorProfile.id,
     action: 'set_user_status',
-    target_type: 'profile',
-    target_id: userId,
-    before_state: { status: targetProfile.status },
-    after_state: { status: nextStatus },
-    ip_address: ipAddress,
+    targetType: 'profile',
+    targetId: userId,
+    beforeState: { status: targetProfile.status },
+    afterState: { status: nextStatus },
+    ipAddress: ipAddress,
     reason: reason || null,
   });
 

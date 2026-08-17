@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentProfile } from '@prometheus/auth';
 import { isAdminRole } from '@prometheus/shared-types';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
 
 const NAV_LINKS = [
   { href: '/admin', label: 'Overview' },
@@ -12,8 +13,8 @@ const NAV_LINKS = [
 ];
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const supabase = await createClient();
-  const profile = await getCurrentProfile(supabase);
+  const session = await auth();
+  const profile = session?.user?.id ? await getCurrentProfile(db, session.user.id) : null;
 
   if (!profile || profile.status !== 'active' || !isAdminRole(profile.role)) {
     redirect('/dashboard');

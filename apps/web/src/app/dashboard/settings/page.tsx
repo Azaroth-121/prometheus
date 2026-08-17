@@ -1,13 +1,14 @@
+import { auth } from '@/lib/auth';
 import { getCurrentProfile } from '@prometheus/auth';
 import { getCurrentPlanInfo } from '@prometheus/billing';
 import { Button, Card, Input } from '@prometheus/ui';
-import { createClient } from '@/lib/supabase/server';
+import { db } from '@/lib/db';
 import { updateDisplayNameAction } from './actions';
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-  const profile = await getCurrentProfile(supabase);
-  const plan = profile ? await getCurrentPlanInfo(supabase, profile.id) : null;
+  const session = await auth();
+  const profile = session?.user?.id ? await getCurrentProfile(db, session.user.id) : null;
+  const plan = profile ? await getCurrentPlanInfo(db, profile.id) : null;
 
   return (
     <div className="flex flex-col gap-4">

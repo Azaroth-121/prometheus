@@ -1,10 +1,12 @@
+import { sql, gte } from 'drizzle-orm';
+import { profiles, optimizationRequests } from '@prometheus/database';
 import { Card } from '@prometheus/ui';
-import { createClient } from '@/lib/supabase/server';
+import { db } from '@/lib/db';
 
-function startOfTodayIso(): string {
+function startOfToday(): Date {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
-  return start.toISOString();
+  return start;
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {
@@ -17,21 +19,23 @@ function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export default async function AdminOverviewPage() {
-  const supabase = await createClient();
+  // Gated by admin/layout.tsx (requireAdmin-equivalent) -- no RLS backstop
+  // anymore, so that layout check is the only thing standing between this
+  // page and every user's data. See known-technical-debt-style note: worth
+  // a dedicated test confirming a non-admin can't reach this route.
+  const [userCountRow] = await db.select({ totalUsers: sql<number>`count(*)::int` }).from(profiles);
+  const totalUsers = userCountRow?.totalUsers ?? 0;
 
-  const { count: totalUsers } = await supabase
-    .from('profiles')
-    .select('*', { count: 'exact', head: true });
+  const todaysRequests = await db
+    .select({ status: optimizationRequests.status, errorCode: optimizationRequests.errorCode })
+    .from(optimizationRequests)
+    .where(gte(optimizationRequests.createdAt, startOfToday()));
 
-  const { data: todaysRequests } = await supabase
-    .from('optimization_requests')
-    .select('status, error_code')
-    .gte('created_at', startOfTodayIso());
-
-  const requestsToday = todaysRequests?.length ?? 0;
-  const failedToday = todaysRequests?.filter((r) => r.status === 'failed').length ?? 0;
-  const guardrailFailedToday =
-    todaysRequests?.filter((r) => r.error_code === 'GUARDRAIL_VALIDATION_FAILED').length ?? 0;
+  const requestsToday = todaysRequests.length;
+  const failedToday = todaysRequests.filter((r) => r.status === 'failed').length;
+  const guardrailFailedToday = todaysRequests.filter(
+    (r) => r.errorCode === 'GUARDRAIL_VALIDATION_FAILED'
+  ).length;
 
   const errorRate = requestsToday === 0 ? 0 : (failedToday / requestsToday) * 100;
   const guardrailFailureRate = requestsToday === 0 ? 0 : (guardrailFailedToday / requestsToday) * 100;

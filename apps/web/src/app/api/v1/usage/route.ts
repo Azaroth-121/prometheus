@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import type { UsageSummary } from '@prometheus/shared-types';
-import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { verifyAccessToken } from '@prometheus/auth';
 import { getUsageSummary } from '@prometheus/billing';
+import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 /**
@@ -18,15 +18,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing bearer token.' }, { status: 401 });
   }
 
-  const anonClient = createClient(env.supabaseUrl, env.supabaseAnonKey);
-  const { data: authData, error: authError } = await anonClient.auth.getUser(accessToken);
-
-  if (authError || !authData.user) {
+  const userId = verifyAccessToken(accessToken, env.extensionJwtSecret);
+  if (!userId) {
     return NextResponse.json({ error: 'Invalid or expired session.' }, { status: 401 });
   }
 
-  const serviceClient = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-  const summary = await getUsageSummary(serviceClient, authData.user.id);
+  const summary = await getUsageSummary(db, userId);
 
   return NextResponse.json<UsageSummary>(summary);
 }

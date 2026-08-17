@@ -1,38 +1,31 @@
-import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { eq, and, isNull, lte } from 'drizzle-orm';
+import { subscriptions, profiles, plans, systemEvents } from '@prometheus/database';
+import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 const REMINDER_WINDOW_DAYS = 5;
 
-interface DueSubscription {
-  id: string;
-  current_period_end: string;
-  profiles: { email: string; display_name: string | null } | null;
-  plans: { name: string } | null;
-}
-
 async function logSystemEvent(
-  client: SupabaseClient,
   severity: 'info' | 'warning' | 'error',
   message: string,
-  metadata?: Record<string, unknown>,
+  metadata?: Record<string, unknown>
 ) {
-  await client.from('system_events').insert({
-    request_id: randomUUID(),
+  await db.insert(systemEvents).values({
     service: 'expiry_reminders_cron',
     severity,
-    event_type: 'expiry_reminder',
+    eventType: 'expiry_reminder',
     message,
-    metadata,
+    metadata: metadata ?? null,
   });
 }
 
 /**
- * Vercel Cron attaches `Authorization: Bearer $CRON_SECRET` automatically
- * once CRON_SECRET is set as a project env var — this route trusts that
- * header instead of a user session, since it has no human caller.
+ * Was triggered by Vercel Cron (attached `Authorization: Bearer $CRON_SECRET`
+ * automatically once CRON_SECRET was a project env var). On Azure this is
+ * triggered by a Container Apps Job on a Scheduled trigger instead -- the
+ * route logic itself is unchanged, it just checks the same bearer header
+ * regardless of what's calling it, since it has no human caller either way.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
@@ -40,42 +33,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const client = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const windowEnd = new Date(Date.now() + REMINDER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const { data: dueSubscriptions, error } = await client
-    .from('subscriptions')
-    .select('id, current_period_end, profiles(email, display_name), plans(name)')
-    .eq('status', 'active')
-    .is('reminder_sent_at', null)
-    .lte('current_period_end', windowEnd.toISOString())
-    .returns<DueSubscription[]>();
-
-  if (error) {
-    await logSystemEvent(client, 'error', `Failed to query due subscriptions: ${error.message}`);
-    return NextResponse.json({ error: 'Query failed.' }, { status: 500 });
-  }
+  const dueSubscriptions = await db
+    .select({
+      id: subscriptions.id,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+      email: profiles.email,
+      displayName: profiles.displayName,
+      planName: plans.name,
+    })
+    .from(subscriptions)
+    .innerJoin(profiles, eq(subscriptions.userId, profiles.id))
+    .innerJoin(plans, eq(subscriptions.planId, plans.id))
+    .where(
+      and(
+        eq(subscriptions.status, 'active'),
+        isNull(subscriptions.reminderSentAt),
+        lte(subscriptions.currentPeriodEnd, windowEnd)
+      )
+    );
 
   let sent = 0;
 
-  for (const subscription of dueSubscriptions ?? []) {
-    const email = subscription.profiles?.email;
-    if (!email) {
-      await logSystemEvent(client, 'warning', 'Skipped expiry reminder: subscription has no profile email.', {
-        subscription_id: subscription.id,
-      });
-      continue;
-    }
-
+  for (const subscription of dueSubscriptions) {
     try {
       const response = await fetch(env.makeExpiryWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
-          display_name: subscription.profiles?.display_name ?? null,
-          plan_name: subscription.plans?.name ?? 'Prometheus',
-          expires_at: subscription.current_period_end,
+          email: subscription.email,
+          display_name: subscription.displayName,
+          plan_name: subscription.planName,
+          expires_at: subscription.currentPeriodEnd.toISOString(),
           renew_url: `${env.appUrl}/dashboard/billing`,
         }),
       });
@@ -84,24 +74,23 @@ export async function GET(request: NextRequest) {
         throw new Error(`Webhook responded ${response.status}`);
       }
 
-      await client
-        .from('subscriptions')
-        .update({ reminder_sent_at: new Date().toISOString() })
-        .eq('id', subscription.id);
+      await db
+        .update(subscriptions)
+        .set({ reminderSentAt: new Date() })
+        .where(eq(subscriptions.id, subscription.id));
 
       sent += 1;
-      await logSystemEvent(client, 'info', `Sent expiry reminder to ${email}.`, {
+      await logSystemEvent('info', `Sent expiry reminder to ${subscription.email}.`, {
         subscription_id: subscription.id,
       });
     } catch (webhookError) {
       await logSystemEvent(
-        client,
         'error',
         `Failed to send expiry reminder: ${webhookError instanceof Error ? webhookError.message : String(webhookError)}`,
-        { subscription_id: subscription.id },
+        { subscription_id: subscription.id }
       );
     }
   }
 
-  return NextResponse.json({ checked: dueSubscriptions?.length ?? 0, sent });
+  return NextResponse.json({ checked: dueSubscriptions.length, sent });
 }

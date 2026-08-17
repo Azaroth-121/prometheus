@@ -1,17 +1,20 @@
 import { redirect } from 'next/navigation';
+import { eq } from 'drizzle-orm';
 import { getCurrentProfile } from '@prometheus/auth';
-import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { plans, subscriptions } from '@prometheus/database';
 import { captureOrder } from '@prometheus/billing';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 const ACCESS_PERIOD_DAYS = 30;
 
 /**
  * Activates access on the redirect back from PayPal's approval page,
- * independent of webhook delivery (webhooks can't reach localhost — see
- * documentation/architecture/implementation-notes.md). `token` is PayPal's
- * own param (the order id); `plan` is ours, appended when creating the order.
+ * independent of webhook delivery (webhooks need a publicly reachable URL —
+ * see documentation/architecture/implementation-notes.md). `token` is
+ * PayPal's own param (the order id); `plan` is ours, appended when creating
+ * the order.
  */
 export default async function BillingSuccessPage({
   searchParams,
@@ -19,8 +22,8 @@ export default async function BillingSuccessPage({
   searchParams: Promise<{ token?: string; plan?: string }>;
 }) {
   const { token: orderId, plan: planCode } = await searchParams;
-  const supabase = await createClient();
-  const profile = await getCurrentProfile(supabase);
+  const session = await auth();
+  const profile = session?.user?.id ? await getCurrentProfile(db, session.user.id) : null;
 
   if (!profile) redirect('/login');
   if (!orderId || !planCode) redirect('/dashboard/billing');
@@ -37,33 +40,35 @@ export default async function BillingSuccessPage({
     redirect('/dashboard/billing');
   }
 
-  const serviceClient = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-  const { data: plan } = await serviceClient
-    .from('plans')
-    .select('id')
-    .eq('code', planCode)
-    .single();
+  const [plan] = await db.select({ id: plans.id }).from(plans).where(eq(plans.code, planCode)).limit(1);
 
   if (plan) {
     const now = new Date();
     const periodEnd = new Date(now.getTime() + ACCESS_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
-    await serviceClient.from('subscriptions').upsert(
-      {
-        user_id: profile.id,
+    await db
+      .insert(subscriptions)
+      .values({
+        userId: profile.id,
         provider: 'paypal',
-        provider_customer_id: order.payer?.payer_id ?? 'unknown',
+        providerCustomerId: order.payer?.payer_id ?? 'unknown',
         // Reusing this column for the order/transaction id — payments here
         // are one-time, not recurring subscriptions (see access.ts).
-        provider_subscription_id: order.id,
-        plan_id: plan.id,
+        providerSubscriptionId: order.id,
+        planId: plan.id,
         status: 'active',
-        current_period_start: now.toISOString(),
-        current_period_end: periodEnd.toISOString(),
-        cancel_at_period_end: false,
-      },
-      { onConflict: 'provider_subscription_id' },
-    );
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: false,
+      })
+      .onConflictDoUpdate({
+        target: subscriptions.providerSubscriptionId,
+        set: {
+          status: 'active',
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+        },
+      });
   }
 
   redirect('/dashboard/billing');

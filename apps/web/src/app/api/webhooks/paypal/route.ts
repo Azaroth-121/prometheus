@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { createSupabaseServiceRoleClient } from '@prometheus/database';
+import { and, eq } from 'drizzle-orm';
+import { webhookEvents } from '@prometheus/database';
 import { verifyWebhookSignature } from '@prometheus/billing';
+import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 /**
  * Requires PAYPAL_WEBHOOK_ID, which only exists once a webhook is
  * registered against a publicly reachable URL — not possible from
  * localhost. Returns 501 until that's configured (see
- * documentation/architecture/implementation-notes.md).
+ * documentation/architecture/implementation-notes.md). The Azure migration
+ * is what finally makes that URL exist.
  */
 export async function POST(request: NextRequest) {
   const webhookId = env.paypalWebhookId;
@@ -39,51 +42,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid webhook signature.' }, { status: 400 });
   }
 
-  const serviceClient = createSupabaseServiceRoleClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-
-  const { data: existing } = await serviceClient
-    .from('webhook_events')
-    .select('id')
-    .eq('provider', 'paypal')
-    .eq('provider_event_id', event.id)
-    .maybeSingle();
+  const [existing] = await db
+    .select({ id: webhookEvents.id })
+    .from(webhookEvents)
+    .where(and(eq(webhookEvents.provider, 'paypal'), eq(webhookEvents.providerEventId, event.id)))
+    .limit(1);
 
   if (existing) {
     return NextResponse.json({ status: 'already_processed' });
   }
 
-  const { data: webhookEventRow } = await serviceClient
-    .from('webhook_events')
-    .insert({
+  const [webhookEventRow] = await db
+    .insert(webhookEvents)
+    .values({
       provider: 'paypal',
-      provider_event_id: event.id,
-      event_type: event.event_type,
+      providerEventId: event.id,
+      eventType: event.event_type,
       status: 'received',
-      payload_hash: createHash('sha256').update(rawBody).digest('hex'),
+      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
     })
-    .select('id')
-    .single();
+    .returning({ id: webhookEvents.id });
 
   try {
     // Activation itself happens synchronously in the redirect-back success
     // page (payments are one-time, captured immediately) — this webhook is
     // just the audit trail for PAYMENT.CAPTURE.COMPLETED and friends.
     if (webhookEventRow) {
-      await serviceClient
-        .from('webhook_events')
-        .update({ status: 'processed', processed_at: new Date().toISOString() })
-        .eq('id', webhookEventRow.id);
+      await db
+        .update(webhookEvents)
+        .set({ status: 'processed', processedAt: new Date() })
+        .where(eq(webhookEvents.id, webhookEventRow.id));
     }
   } catch (err) {
     if (webhookEventRow) {
-      await serviceClient
-        .from('webhook_events')
-        .update({
-          status: 'failed',
-          error_message: String(err),
-          processed_at: new Date().toISOString(),
-        })
-        .eq('id', webhookEventRow.id);
+      await db
+        .update(webhookEvents)
+        .set({ status: 'failed', errorMessage: String(err), processedAt: new Date() })
+        .where(eq(webhookEvents.id, webhookEventRow.id));
     }
   }
 

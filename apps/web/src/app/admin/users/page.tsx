@@ -1,5 +1,7 @@
+import { desc, ilike } from 'drizzle-orm';
+import { profiles } from '@prometheus/database';
 import { Button, Card, Input } from '@prometheus/ui';
-import { createClient } from '@/lib/supabase/server';
+import { db } from '@/lib/db';
 import { setUserStatusAction } from './actions';
 
 export default async function AdminUsersPage({
@@ -8,17 +10,19 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
-  const supabase = await createClient();
 
-  let query = supabase
-    .from('profiles')
-    .select('id, email, display_name, role, status')
-    .order('created_at', { ascending: false })
+  const users = await db
+    .select({
+      id: profiles.id,
+      email: profiles.email,
+      displayName: profiles.displayName,
+      role: profiles.role,
+      status: profiles.status,
+    })
+    .from(profiles)
+    .where(q ? ilike(profiles.email, `%${q}%`) : undefined)
+    .orderBy(desc(profiles.createdAt))
     .limit(50);
-  if (q) {
-    query = query.ilike('email', `%${q}%`);
-  }
-  const { data: users } = await query;
 
   return (
     <div className="flex flex-col gap-4">
@@ -29,7 +33,7 @@ export default async function AdminUsersPage({
         </Button>
       </form>
       <Card className="flex flex-col divide-y p-0">
-        {(users ?? []).map((user) => (
+        {users.map((user) => (
           <div key={user.id} className="flex items-center justify-between gap-4 p-4">
             <div>
               <p className="font-medium">{user.email}</p>
@@ -51,9 +55,7 @@ export default async function AdminUsersPage({
             </form>
           </div>
         ))}
-        {(users ?? []).length === 0 && (
-          <p className="p-4 text-sm text-gray-600">No users found.</p>
-        )}
+        {users.length === 0 && <p className="p-4 text-sm text-gray-600">No users found.</p>}
       </Card>
     </div>
   );
