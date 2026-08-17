@@ -24,5 +24,8 @@
     }
   ],
   "permissions": ["storage"],
-  "host_permissions": ["http://localhost:3000/*", "https://prometheus-azaroth.vercel.app/*"]
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://ca-prometheus-web-dev-eus2-01.delightfulcliff-8cc5b938.eastus2.azurecontainerapps.io/*"
+  ]
 }

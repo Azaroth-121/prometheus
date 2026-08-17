@@ -1,14 +1,12 @@
 import type { OptimizeRequestBody, OptimizeResponse, UsageSummary } from '@prometheus/shared-types';
-import { supabase } from './supabase';
+import { getAccessToken } from './session';
 
 const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL;
 
 async function authorizedFetch(path: string, init?: RequestInit): Promise<Response> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const accessToken = await getAccessToken();
 
-  if (!session) {
+  if (!accessToken) {
     throw new Error('Not signed in.');
   }
 
@@ -16,7 +14,7 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
     ...init,
     headers: {
       ...init?.headers,
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   });
 }

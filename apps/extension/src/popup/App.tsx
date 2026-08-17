@@ -1,10 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { signInWithPassword, signOut } from '@prometheus/auth';
 import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
 import { isOptimizeError } from '@prometheus/shared-types';
 import { getUsage, optimize } from '../lib/api';
-import { supabase } from '../lib/supabase';
+import { getStoredSession, signIn, signOut } from '../lib/session';
 import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
 
 const MODES = ['standard', 'image', 'code'] as const satisfies readonly OptimizationMode[];
@@ -13,7 +12,10 @@ const MODES = ['standard', 'image', 'code'] as const satisfies readonly Optimiza
 // payment is one-time (30 days of access), not a recurring subscription.
 const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
 
-const WEB_APP_URL = 'https://prometheus-azaroth.vercel.app';
+// Same origin the extension calls for the API -- apps/web serves both from
+// one Container App, unlike the old split where this was hardcoded
+// separately from VITE_API_BASE_URL and could drift out of sync with it.
+const WEB_APP_URL: string = import.meta.env.VITE_API_BASE_URL;
 const SETTINGS_SITE_URL = 'https://soveraign.solutions/prometheus/';
 
 const TABS = ['optimize', 'billing', 'settings'] as const;
@@ -59,15 +61,10 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setIsSignedIn(Boolean(data.session));
-      setUserEmail(data.session?.user.email ?? null);
-    });
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    getStoredSession().then((session) => {
       setIsSignedIn(Boolean(session));
-      setUserEmail(session?.user.email ?? null);
+      setUserEmail(session?.email ?? null);
     });
-    return () => subscription.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -81,15 +78,20 @@ export default function App() {
     event.preventDefault();
     setAuthBusy(true);
     setAuthError(null);
-    const { error: signInError } = await signInWithPassword(supabase, { email, password });
+    const result = await signIn(email, password);
     setAuthBusy(false);
-    if (signInError) {
-      setAuthError(signInError.message);
+    if (!result.ok) {
+      setAuthError(result.error);
+      return;
     }
+    setIsSignedIn(true);
+    setUserEmail(email);
   }
 
   async function handleSignOut() {
-    await signOut(supabase);
+    await signOut();
+    setIsSignedIn(false);
+    setUserEmail(null);
     setResult(null);
     setError(null);
     setTab('optimize');
