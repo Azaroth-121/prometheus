@@ -2,9 +2,8 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { signInWithPassword } from '@prometheus/auth';
+import { signIn } from 'next-auth/react';
 import { Button, Card, Input } from '@prometheus/ui';
-import { createClient } from '@/lib/supabase/browser';
 
 export function LoginForm() {
   const router = useRouter();
@@ -19,13 +18,12 @@ export function LoginForm() {
     setError(null);
     setIsSubmitting(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await signInWithPassword(supabase, { email, password });
+    const result = await signIn('credentials', { email, password, redirect: false });
 
     setIsSubmitting(false);
 
-    if (signInError) {
-      setError(signInError.message);
+    if (!result || result.error) {
+      setError('Invalid email or password.');
       return;
     }
 

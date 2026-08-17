@@ -6,14 +6,18 @@ function required(name: string, value: string | undefined): string {
 }
 
 export const env = {
-  get supabaseUrl() {
-    return required('NEXT_PUBLIC_SUPABASE_URL', process.env.NEXT_PUBLIC_SUPABASE_URL);
+  get databaseUrl() {
+    return required('DATABASE_URL', process.env.DATABASE_URL);
   },
-  get supabaseAnonKey() {
-    return required('NEXT_PUBLIC_SUPABASE_ANON_KEY', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  /** NextAuth's own session-cookie signing secret (web app sessions only). */
+  get authSecret() {
+    return required('AUTH_SECRET', process.env.AUTH_SECRET);
   },
-  get supabaseServiceRoleKey() {
-    return required('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY);
+  /** Signs the extension's self-issued access/refresh token pair -- separate from
+   * authSecret so the two token systems (cookie sessions vs. extension bearer
+   * tokens) can be rotated independently. */
+  get extensionJwtSecret() {
+    return required('EXTENSION_JWT_SECRET', process.env.EXTENSION_JWT_SECRET);
   },
   get openaiApiKey() {
     return required('OPENAI_API_KEY', process.env.OPENAI_API_KEY);
@@ -39,5 +43,10 @@ export const env = {
   },
   get makeExpiryWebhookUrl() {
     return required('MAKE_EXPIRY_WEBHOOK_URL', process.env.MAKE_EXPIRY_WEBHOOK_URL);
+  },
+  /** Same Make.com-webhook-sends-the-email pattern as expiry reminders, for
+   * the sign-up email-verification link. */
+  get makeVerificationWebhookUrl() {
+    return required('MAKE_VERIFICATION_WEBHOOK_URL', process.env.MAKE_VERIFICATION_WEBHOOK_URL);
   },
 };
