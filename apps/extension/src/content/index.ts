@@ -17,6 +17,17 @@ function init() {
 
   overlay.onBadgeClick(() => {
     if (!currentInput) return;
+
+    // Reloading/updating the extension orphans any content script already
+    // injected into a tab that was open beforehand: chrome.runtime.id goes
+    // undefined in that orphaned script, and calling sendMessage on it either
+    // throws synchronously or silently never calls back — the page just
+    // looks hung until the 25s timeout below. Catch it immediately instead.
+    if (!chrome.runtime?.id) {
+      overlay.showError('Prometheus was updated — please refresh this page and try again.');
+      return;
+    }
+
     const text = getText(currentInput);
     overlay.showLoading();
 
@@ -40,30 +51,39 @@ function init() {
       overlay.showError('This is taking too long. Please try again.');
     }, RESPONSE_TIMEOUT_MS);
 
-    chrome.runtime.sendMessage(message, (response: OptimizeMessageResponse) => {
+    try {
+      chrome.runtime.sendMessage(message, (response: OptimizeMessageResponse) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+
+        if (!response?.ok) {
+          overlay.showError(
+            response?.error === 'NOT_SIGNED_IN'
+              ? 'Sign in to Prometheus via the extension icon to use this.'
+              : 'Could not reach the optimization service.',
+          );
+          return;
+        }
+
+        if ('error' in response.data) {
+          overlay.showError(response.data.error.message);
+          return;
+        }
+
+        const { optimized_prompt: optimizedPrompt, upgrade_notes: upgradeNotes } = response.data;
+        overlay.showResult(optimizedPrompt, upgradeNotes, () => {
+          if (currentInput) setText(currentInput, optimizedPrompt);
+        });
+      });
+    } catch {
+      // Belt-and-suspenders: chrome.runtime.id can still be truthy at the
+      // check above and go stale by the time sendMessage actually runs.
       if (settled) return;
       settled = true;
       window.clearTimeout(timeoutId);
-
-      if (!response?.ok) {
-        overlay.showError(
-          response?.error === 'NOT_SIGNED_IN'
-            ? 'Sign in to Prometheus via the extension icon to use this.'
-            : 'Could not reach the optimization service.',
-        );
-        return;
-      }
-
-      if ('error' in response.data) {
-        overlay.showError(response.data.error.message);
-        return;
-      }
-
-      const { optimized_prompt: optimizedPrompt, upgrade_notes: upgradeNotes } = response.data;
-      overlay.showResult(optimizedPrompt, upgradeNotes, () => {
-        if (currentInput) setText(currentInput, optimizedPrompt);
-      });
-    });
+      overlay.showError('Prometheus was updated — please refresh this page and try again.');
+    }
   });
 
   function handleInput() {
