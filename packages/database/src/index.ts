@@ -1,3 +1,1 @@
-export * from './browser';
-export * from './server';
-export * from './service-role';
+export * from './client';

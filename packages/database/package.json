@@ -7,14 +7,18 @@
   "types": "./src/index.ts",
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.47.0",
+    "drizzle-orm": "^0.36.4",
+    "pg": "^8.13.1",
     "@prometheus/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.28.1",
     "typescript": "^5.7.0"
   }
 }
