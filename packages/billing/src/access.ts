@@ -1,4 +1,6 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { eq, and, gte, desc, sql } from 'drizzle-orm';
+import type { Database } from '@prometheus/database';
+import { plans, subscriptions, optimizationRequests } from '@prometheus/database';
 import type { UsageSummary } from '@prometheus/shared-types';
 
 export interface CurrentPlanInfo {
@@ -20,21 +22,17 @@ const USAGE_WINDOW_DAYS = 30;
  * rather than hardcoded, so there's exactly one source of truth for its
  * limits instead of a shadow copy that could drift from the DB.
  */
-async function getFreePlanInfo(client: SupabaseClient): Promise<CurrentPlanInfo> {
+async function getFreePlanInfo(db: Database): Promise<CurrentPlanInfo> {
   const periodStart = new Date(Date.now() - USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const { data: plan } = await client
-    .from('plans')
-    .select('code, name, monthly_request_limit, monthly_token_limit, maximum_input_length')
-    .eq('code', 'free')
-    .single();
+  const [plan] = await db.select().from(plans).where(eq(plans.code, 'free')).limit(1);
 
   return {
     planCode: plan?.code ?? 'free',
     planName: plan?.name ?? 'Free',
     expiresAt: null,
-    monthlyRequestLimit: plan?.monthly_request_limit ?? 20,
-    monthlyTokenLimit: plan?.monthly_token_limit ?? 50_000,
-    maximumInputLength: plan?.maximum_input_length ?? 2000,
+    monthlyRequestLimit: plan?.monthlyRequestLimit ?? 20,
+    monthlyTokenLimit: plan?.monthlyTokenLimit ?? 50_000,
+    maximumInputLength: plan?.maximumInputLength ?? 2000,
     periodStart: periodStart.toISOString(),
   };
 }
@@ -44,41 +42,36 @@ async function getFreePlanInfo(client: SupabaseClient): Promise<CurrentPlanInfo>
  * period if it hasn't lapsed, otherwise Free. There's no cron job flipping
  * anyone to "expired" — a lapsed period just isn't returned as active here.
  */
-export async function getCurrentPlanInfo(
-  client: SupabaseClient,
-  userId: string,
-): Promise<CurrentPlanInfo> {
-  const { data: subscription } = await client
-    .from('subscriptions')
-    .select('current_period_start, current_period_end, plan_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('current_period_end', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+export async function getCurrentPlanInfo(db: Database, userId: string): Promise<CurrentPlanInfo> {
+  const [subscription] = await db
+    .select({
+      currentPeriodStart: subscriptions.currentPeriodStart,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+      planId: subscriptions.planId,
+    })
+    .from(subscriptions)
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, 'active')))
+    .orderBy(desc(subscriptions.currentPeriodEnd))
+    .limit(1);
 
-  if (!subscription || new Date(subscription.current_period_end) <= new Date()) {
-    return getFreePlanInfo(client);
+  if (!subscription || subscription.currentPeriodEnd <= new Date()) {
+    return getFreePlanInfo(db);
   }
 
-  const { data: plan } = await client
-    .from('plans')
-    .select('code, name, monthly_request_limit, monthly_token_limit, maximum_input_length')
-    .eq('id', subscription.plan_id)
-    .single();
+  const [plan] = await db.select().from(plans).where(eq(plans.id, subscription.planId)).limit(1);
 
   if (!plan) {
-    return getFreePlanInfo(client);
+    return getFreePlanInfo(db);
   }
 
   return {
     planCode: plan.code,
     planName: plan.name,
-    expiresAt: subscription.current_period_end,
-    monthlyRequestLimit: plan.monthly_request_limit,
-    monthlyTokenLimit: plan.monthly_token_limit,
-    maximumInputLength: plan.maximum_input_length,
-    periodStart: subscription.current_period_start,
+    expiresAt: subscription.currentPeriodEnd.toISOString(),
+    monthlyRequestLimit: plan.monthlyRequestLimit,
+    monthlyTokenLimit: plan.monthlyTokenLimit,
+    maximumInputLength: plan.maximumInputLength,
+    periodStart: subscription.currentPeriodStart.toISOString(),
   };
 }
 
@@ -90,21 +83,21 @@ export interface UsageCheckResult {
 }
 
 async function getPeriodUsage(
-  client: SupabaseClient,
+  db: Database,
   userId: string,
-  periodStart: string,
+  periodStart: string
 ): Promise<{ requests: number; tokens: number }> {
-  const { data: rows, count } = await client
-    .from('optimization_requests')
-    .select('input_tokens, output_tokens', { count: 'exact' })
-    .eq('user_id', userId)
-    .gte('created_at', periodStart);
+  const [row] = await db
+    .select({
+      requests: sql<number>`count(*)::int`,
+      tokens: sql<number>`coalesce(sum(coalesce(${optimizationRequests.inputTokens}, 0) + coalesce(${optimizationRequests.outputTokens}, 0)), 0)::int`,
+    })
+    .from(optimizationRequests)
+    .where(
+      and(eq(optimizationRequests.userId, userId), gte(optimizationRequests.createdAt, new Date(periodStart)))
+    );
 
-  const tokens = (rows ?? []).reduce(
-    (sum, row) => sum + (row.input_tokens ?? 0) + (row.output_tokens ?? 0),
-    0,
-  );
-  return { requests: count ?? 0, tokens };
+  return { requests: row?.requests ?? 0, tokens: row?.tokens ?? 0 };
 }
 
 /**
@@ -115,11 +108,11 @@ async function getPeriodUsage(
  * maintaining a separate counter, so there's nothing to keep in sync.
  */
 export async function checkUsageAgainstPlan(
-  client: SupabaseClient,
+  db: Database,
   userId: string,
-  planInfo: CurrentPlanInfo,
+  planInfo: CurrentPlanInfo
 ): Promise<UsageCheckResult> {
-  const usage = await getPeriodUsage(client, userId, planInfo.periodStart);
+  const usage = await getPeriodUsage(db, userId, planInfo.periodStart);
 
   if (usage.requests >= planInfo.monthlyRequestLimit) {
     return { allowed: false, exceeded: 'requests', remainingRequests: 0 };
@@ -140,9 +133,9 @@ export async function checkUsageAgainstPlan(
 }
 
 /** Same period/count logic as checkUsageAgainstPlan, but for display rather than allow/deny. */
-export async function getUsageSummary(client: SupabaseClient, userId: string): Promise<UsageSummary> {
-  const planInfo = await getCurrentPlanInfo(client, userId);
-  const usage = await getPeriodUsage(client, userId, planInfo.periodStart);
+export async function getUsageSummary(db: Database, userId: string): Promise<UsageSummary> {
+  const planInfo = await getCurrentPlanInfo(db, userId);
+  const usage = await getPeriodUsage(db, userId, planInfo.periodStart);
 
   return {
     plan_code: planInfo.planCode,

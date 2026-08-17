@@ -1,24 +1,21 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { eq } from 'drizzle-orm';
+import type { Database } from '@prometheus/database';
+import { profiles } from '@prometheus/database';
 import type { Profile } from '@prometheus/shared-types';
-
-export async function getSession(client: SupabaseClient) {
-  const { data, error } = await client.auth.getSession();
-  if (error) throw error;
-  return data.session;
-}
+import { toProfile } from './profile-mapper';
 
 /**
- * Loads the caller's own profile row. Relies on RLS (profiles: users can
- * only select their own row) rather than filtering by id here — this must
- * be called with a session-scoped client, never the service-role client.
+ * Loads a profile by id -- the explicit-userId replacement for the old
+ * RLS-backed `getCurrentProfile(supabaseClient)`. There's no more ambient
+ * session to read the caller's identity from a database client itself:
+ * callers resolve `userId` first (NextAuth's `auth()` session for the web
+ * app, or the verified bearer JWT's `sub` claim for the extension/API
+ * routes) and pass it in explicitly. This is also the app-layer replacement
+ * for what RLS used to enforce automatically -- every call site that used to
+ * rely on "RLS only returns my own row" now must call this with the actual
+ * authenticated user's id, never a client-supplied one.
  */
-export async function getCurrentProfile(client: SupabaseClient): Promise<Profile | null> {
-  const {
-    data: { user },
-  } = await client.auth.getUser();
-  if (!user) return null;
-
-  const { data, error } = await client.from('profiles').select('*').eq('id', user.id).single();
-  if (error) throw error;
-  return data as Profile;
+export async function getCurrentProfile(db: Database, userId: string): Promise<Profile | null> {
+  const [row] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
+  return row ? toProfile(row) : null;
 }

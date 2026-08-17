@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.47.0",
+    "drizzle-orm": "^0.36.4",
+    "@prometheus/database": "workspace:*",
     "@prometheus/shared-types": "workspace:*"
   },
   "devDependencies": {
