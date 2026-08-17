@@ -31,3 +31,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# deploy script gets real secrets pasted into it locally -- never commit
+deploy.ps1

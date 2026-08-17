@@ -12,7 +12,7 @@ import { createDatabaseClient, plans } from './client';
  * Idempotent: safe to run on every deploy (upserts by `code`, the same
  * uniqueness the schema itself enforces).
  *
- * Usage: DATABASE_URL=postgres://... pnpm --filter @prometheus/database exec tsx src/seed.ts
+ * Usage: $env:DATABASE_URL = "postgres://..."; pnpm --filter @prometheus/database run db:seed
  */
 
 // Duplicated here rather than imported from @prometheus/billing to avoid a
