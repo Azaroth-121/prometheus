@@ -16,7 +16,6 @@ const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
 // one Container App, unlike the old split where this was hardcoded
 // separately from VITE_API_BASE_URL and could drift out of sync with it.
 const WEB_APP_URL: string = import.meta.env.VITE_API_BASE_URL;
-const SETTINGS_SITE_URL = 'https://soveraign.solutions/prometheus/';
 
 const TABS = ['optimize', 'billing', 'settings'] as const;
 type Tab = (typeof TABS)[number];
@@ -320,7 +319,7 @@ export default function App() {
                   FAQs
                 </a>
                 <a
-                  href={SETTINGS_SITE_URL}
+                  href={WEB_APP_URL}
                   target="_blank"
                   rel="noreferrer"
                   className="text-glow-cyan hover:underline"
