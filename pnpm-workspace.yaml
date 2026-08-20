@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# esbuild (vitest's transform) and ssh2 (Testcontainers' Docker exec/port
+# forwarding) both need their postinstall/native build to actually run.
+onlyBuiltDependencies:
+  - esbuild
+  - ssh2
+  - cpu-features
+

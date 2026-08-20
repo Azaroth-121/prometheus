@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
@@ -28,6 +28,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm turbo run typecheck
+
+      - name: Test
+        run: pnpm turbo run test
 
       - name: Build
         run: pnpm turbo run build

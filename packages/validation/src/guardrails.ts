@@ -48,7 +48,7 @@ const MAX_IMPROVED_PROMPT_LENGTH = 4000;
  * the doc itself notes a rule-based validator is sufficient to start,
  * with a secondary model check reserved for uncertain results later.
  */
-const EXECUTION_LEAK_PHRASES = [
+export const EXECUTION_LEAK_PHRASES = [
   "here is the image",
   "here's the image",
   'the answer is',

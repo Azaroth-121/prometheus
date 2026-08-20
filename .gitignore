@@ -17,9 +17,15 @@ build/
 # extension build artifacts
 apps/extension/.output/
 apps/extension/*.zip
+*.zip
 # the natural default extraction target for prometheus-extension.zip — keep
 # it out of the source tree entirely (it broke `eslint .` once already)
 apps/extension/prometheus-extension/
+
+# extension signing key -- the private half of manifest.json's "key" field
+# (pins the Chrome extension's stable ID). Losing this file means losing
+# that ID permanently; never commit it. See apps/extension/.keys/README.md.
+apps/extension/.keys/*.pem
 
 # editor/os
 .DS_Store
