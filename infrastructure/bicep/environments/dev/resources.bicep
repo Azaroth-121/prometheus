@@ -1,5 +1,6 @@
 @description('Deployed with scope set to the Prometheus dev resource group by main.bicep.')
 param location string
+param postgresLocation string
 param tags object
 param names object
 
@@ -49,7 +50,7 @@ module postgres '../../modules/postgresql-flexible.bicep' = {
   name: 'deploy-postgres'
   params: {
     name: names.postgres
-    location: location
+    location: postgresLocation
     tags: tags
     administratorLogin: 'prometheus_admin'
     administratorPassword: postgresAdminPassword

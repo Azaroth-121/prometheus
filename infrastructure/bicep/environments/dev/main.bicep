@@ -5,6 +5,9 @@ param regionCode string = 'eus2'
 param location string = 'eastus2'
 param instance string = '01'
 
+@description('This subscription is restricted from provisioning Postgres Flexible Server in eastus2 (confirmed live via `az postgres flexible-server list-skus`, same anti-abuse restriction class as the roleAssignments/write block). organizational-singularity\'s own Postgres server hit the identical wall and was deployed to Central US instead -- same fix applied here. Naming keeps the eus2 region code for consistency with the rest of the stack even though the resource itself lives in centralus.')
+param postgresLocation string = 'centralus'
+
 @secure()
 param postgresAdminPassword string
 
@@ -61,8 +64,8 @@ var names = {
   postgres: 'psql-prometheus-core-${env}-${regionCode}-${instance}'
   containerRegistry: 'acrprometheus${env}${regionCode}${instance}'
   webApp: 'ca-prometheus-web-${env}-${regionCode}-${instance}'
-  cronJob: 'caj-prometheus-expiry-${env}-${regionCode}-${instance}'
-  keyVault: 'kv-prometheus-core-${env}-${regionCode}-${instance}'
+  cronJob: 'caj-prom-expiry-${env}-${regionCode}-${instance}'
+  keyVault: 'kv-prom-core-${env}-${regionCode}-${instance}'
   budget: 'budget-prometheus-${env}'
 }
 
@@ -93,6 +96,7 @@ module resources 'resources.bicep' = {
   scope: az.resourceGroup(names.resourceGroup)
   params: {
     location: location
+    postgresLocation: postgresLocation
     tags: tags
     names: names
     postgresAdminPassword: postgresAdminPassword

@@ -27,6 +27,12 @@ WORKDIR /app
 RUN npm install -g pnpm@10.24.0 turbo@^2.3.0
 COPY --from=installer /app/ .
 COPY --from=pruner /app/out/full/ .
+# turbo prune --docker's out/full/ only contains files inside workspace
+# package directories -- it does not pick up root-level config files like
+# tsconfig.base.json that packages reach via "extends", so copy it in
+# explicitly from the build context (repo root) or `next build` fails with
+# TS5083 (cannot read tsconfig.base.json).
+COPY tsconfig.base.json ./tsconfig.base.json
 RUN turbo run build --filter=@prometheus/web
 
 # --- Runtime: Next.js standalone output only -- no monorepo tooling, no
@@ -38,7 +44,7 @@ USER nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+# No apps/web/public directory exists in this app (no static assets committed).
 
 EXPOSE 3000
 ENV PORT=3000
