@@ -26,21 +26,21 @@ const FAQS = [
     answer: 'Head to the Billing page and pay for another 30-day period on any tier, any time.',
   },
   {
-    question: 'This still feels like a prototype — is it?',
+    question: 'Is pricing final?',
     answer:
-      "Yes. Pricing, limits, and several flows here are still being validated and will change before a real launch.",
+      'Not yet — plan pricing and limits are still being tuned based on real usage. Existing paid periods always run for the full 30 days you paid for, even if the listed price changes afterward.',
   },
 ];
 
 export default function FaqsPage() {
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">FAQs</h1>
+      <h1 className="font-display text-2xl font-semibold text-ink">FAQs</h1>
       <div className="flex flex-col gap-3">
         {FAQS.map((faq) => (
           <Card key={faq.question}>
-            <p className="font-medium">{faq.question}</p>
-            <p className="mt-1 text-sm text-gray-600">{faq.answer}</p>
+            <p className="font-medium text-ink">{faq.question}</p>
+            <p className="mt-1 text-sm text-ink-muted">{faq.answer}</p>
           </Card>
         ))}
       </div>

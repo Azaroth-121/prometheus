@@ -5,8 +5,8 @@ import { db } from '@/lib/db';
 function ProgressBar({ used, limit }: { used: number; limit: number }) {
   const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-      <div className="h-full rounded-full bg-brand-600" style={{ width: `${pct}%` }} />
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+      <div className="h-full rounded-full bg-glow-cyan" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -16,11 +16,11 @@ export async function UsageCard({ userId }: { userId: string }) {
 
   return (
     <Card className="flex flex-col gap-3">
-      <p className="text-gray-600">Usage this period</p>
+      <p className="text-ink-muted">Usage this period</p>
       <div className="flex flex-col gap-1">
         <div className="flex justify-between text-sm">
-          <span>Requests</span>
-          <span className="text-gray-600">
+          <span className="text-ink">Requests</span>
+          <span className="text-ink-muted">
             {usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}
           </span>
         </div>
@@ -28,8 +28,8 @@ export async function UsageCard({ userId }: { userId: string }) {
       </div>
       <div className="flex flex-col gap-1">
         <div className="flex justify-between text-sm">
-          <span>Tokens</span>
-          <span className="text-gray-600">
+          <span className="text-ink">Tokens</span>
+          <span className="text-ink-muted">
             {usage.tokens_used.toLocaleString()} / {usage.tokens_limit.toLocaleString()}
           </span>
         </div>

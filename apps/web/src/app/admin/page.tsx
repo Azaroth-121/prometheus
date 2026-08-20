@@ -12,8 +12,8 @@ function startOfToday(): Date {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <Card>
-      <p className="text-sm text-gray-600">{label}</p>
-      <p className="text-2xl font-semibold">{value}</p>
+      <p className="text-sm text-ink-muted">{label}</p>
+      <p className="text-2xl font-semibold text-ink">{value}</p>
     </Card>
   );
 }

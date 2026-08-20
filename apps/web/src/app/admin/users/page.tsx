@@ -32,12 +32,12 @@ export default async function AdminUsersPage({
           Search
         </Button>
       </form>
-      <Card className="flex flex-col divide-y p-0">
+      <Card className="flex flex-col divide-y divide-line p-0">
         {users.map((user) => (
           <div key={user.id} className="flex items-center justify-between gap-4 p-4">
             <div>
-              <p className="font-medium">{user.email}</p>
-              <p className="text-sm text-gray-600">
+              <p className="font-medium text-ink">{user.email}</p>
+              <p className="text-sm text-ink-muted">
                 {user.role} · {user.status}
               </p>
             </div>
@@ -55,7 +55,7 @@ export default async function AdminUsersPage({
             </form>
           </div>
         ))}
-        {users.length === 0 && <p className="p-4 text-sm text-gray-600">No users found.</p>}
+        {users.length === 0 && <p className="p-4 text-sm text-ink-muted">No users found.</p>}
       </Card>
     </div>
   );

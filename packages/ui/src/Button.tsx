@@ -7,15 +7,17 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-100',
-  secondary: 'bg-white text-brand-700 border border-brand-500 hover:bg-brand-50',
-  ghost: 'bg-transparent text-brand-700 hover:bg-brand-50',
+  primary:
+    'bg-brand-gradient text-white shadow-glow-sm hover:shadow-glow disabled:bg-none disabled:bg-surface-raised disabled:text-ink-muted disabled:shadow-none',
+  secondary:
+    'bg-surface-raised text-ink border border-line hover:border-glow/60 hover:shadow-glow-sm',
+  ghost: 'bg-transparent text-glow-cyan hover:bg-surface-raised',
 };
 
 export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
   return (
     <button
-      className={`rounded px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`rounded px-4 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${className}`}
       {...props}
     />
   );

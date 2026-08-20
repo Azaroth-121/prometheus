@@ -22,11 +22,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-16">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Admin</h1>
+      <div className="flex items-center justify-between border-b border-line pb-4">
+        <h1 className="font-display text-2xl font-semibold text-ink">Admin</h1>
         <nav className="flex gap-4 text-sm">
           {NAV_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className="text-brand-700 hover:underline">
+            <Link key={link.href} href={link.href} className="text-ink-muted hover:text-glow-cyan">
               {link.label}
             </Link>
           ))}

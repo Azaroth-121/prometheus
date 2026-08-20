@@ -38,39 +38,39 @@ export default async function AdminRequestsPage({
           <a
             key={s}
             href={`/admin/requests?status=${s}`}
-            className={`rounded border px-3 py-1 ${status === s ? 'border-brand-600 text-brand-700' : 'border-gray-300 text-gray-600'}`}
+            className={`rounded border px-3 py-1 ${status === s ? 'border-glow text-glow-cyan' : 'border-line text-ink-muted'}`}
           >
             {s}
           </a>
         ))}
         <a
           href="/admin/requests"
-          className={`rounded border px-3 py-1 ${!status ? 'border-brand-600 text-brand-700' : 'border-gray-300 text-gray-600'}`}
+          className={`rounded border px-3 py-1 ${!status ? 'border-glow text-glow-cyan' : 'border-line text-ink-muted'}`}
         >
           all
         </a>
       </form>
-      <Card className="flex flex-col divide-y p-0">
+      <Card className="flex flex-col divide-y divide-line p-0">
         {requests.map((r) => (
           <div key={r.id} className="flex items-center justify-between gap-4 p-4 text-sm">
             <div>
-              <p className="font-medium">
+              <p className="font-medium text-ink">
                 {r.mode} · {r.source}
               </p>
-              <p className="text-gray-600">
+              <p className="text-ink-muted">
                 {r.createdAt.toLocaleString()}
                 {r.latencyMs != null ? ` · ${r.latencyMs}ms` : ''}
               </p>
             </div>
             <div className="text-right">
-              <p className={r.status === 'failed' ? 'font-medium text-red-600' : 'font-medium'}>
+              <p className={r.status === 'failed' ? 'font-medium text-red-400' : 'font-medium text-ink'}>
                 {r.status}
               </p>
-              {r.errorCode && <p className="text-gray-600">{r.errorCode}</p>}
+              {r.errorCode && <p className="text-ink-muted">{r.errorCode}</p>}
             </div>
           </div>
         ))}
-        {requests.length === 0 && <p className="p-4 text-sm text-gray-600">No requests found.</p>}
+        {requests.length === 0 && <p className="p-4 text-sm text-ink-muted">No requests found.</p>}
       </Card>
     </div>
   );

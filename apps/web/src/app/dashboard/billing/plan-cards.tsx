@@ -46,16 +46,16 @@ export function PlanCards() {
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="grid gap-4 sm:grid-cols-3">
         {PLAN_OPTIONS.map((plan) => (
-          <Card key={plan.code} className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold">{plan.name}</h2>
-            <p className="text-3xl font-bold">
+          <Card key={plan.code} className="flex flex-col gap-3 hover:border-glow/60 hover:shadow-glow-sm">
+            <h2 className="font-display text-lg font-semibold text-ink">{plan.name}</h2>
+            <p className="text-3xl font-bold text-ink">
               ${plan.price}
-              <span className="text-sm font-normal text-gray-500"> / 30 days</span>
+              <span className="text-sm font-normal text-ink-muted"> / 30 days</span>
             </p>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-ink-muted">
               {plan.requestLimit.toLocaleString()} optimizations / 30 days
             </p>
             <Button onClick={() => handlePay(plan.code)} disabled={loadingCode !== null}>
