@@ -12,7 +12,13 @@ export interface PrometheusOverlay {
   showBadge: (anchor: DOMRect) => void;
   hideBadge: () => void;
   showLoading: () => void;
-  showResult: (prompt: string, notes: string[], onReplace: () => void) => void;
+  showResult: (
+    prompt: string,
+    notes: string[],
+    onReplace: () => void,
+    onNotHelpful: () => void,
+    onTryAgain: () => void,
+  ) => void;
   showError: (message: string) => void;
   hide: () => void;
   onBadgeClick: (cb: () => void) => void;
@@ -93,6 +99,8 @@ export function createOverlay(): PrometheusOverlay {
     }
     .card .replace { background: linear-gradient(135deg, ${COLORS.glow}, ${COLORS.cyan}); color: white; }
     .card .copy { background: ${COLORS.surfaceRaised}; color: ${COLORS.ink}; border: 1px solid ${COLORS.line}; }
+    .card .icon { flex: none; background: none; color: ${COLORS.inkMuted}; padding: 8px; }
+    .card .icon:hover { color: ${COLORS.ink}; }
     .card .close { position: absolute; top: 8px; right: 10px; background: none; border: none; color: ${COLORS.inkMuted}; cursor: pointer; font-size: 14px; flex: none; padding: 2px 6px; }
     .card .error { color: #f87171; margin: 0; }
     .row { display: flex; align-items: center; gap: 8px; color: ${COLORS.inkMuted}; }
@@ -171,7 +179,7 @@ export function createOverlay(): PrometheusOverlay {
       if (lastAnchor) positionCard(lastAnchor);
       badge.style.display = 'none';
     },
-    showResult(prompt, notes, onReplace) {
+    showResult(prompt, notes, onReplace, onNotHelpful, onTryAgain) {
       const notesHtml = notes.length
         ? `<ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>`
         : '';
@@ -183,6 +191,8 @@ export function createOverlay(): PrometheusOverlay {
         <div class="actions">
           <button class="replace">Replace</button>
           <button class="copy">Copy</button>
+          <button class="icon try-again" title="Try again">&#8635;</button>
+          <button class="icon not-helpful" title="Not helpful">&#128078;</button>
         </div>
       `;
       attachClose();
@@ -194,6 +204,12 @@ export function createOverlay(): PrometheusOverlay {
         void navigator.clipboard.writeText(prompt);
         const copyBtn = card.querySelector('.copy');
         if (copyBtn) copyBtn.textContent = 'Copied ✓';
+      });
+      card.querySelector('.try-again')?.addEventListener('click', () => onTryAgain());
+      card.querySelector('.not-helpful')?.addEventListener('click', () => {
+        onNotHelpful();
+        const btn = card.querySelector('.not-helpful');
+        if (btn) btn.setAttribute('disabled', 'true');
       });
       if (lastAnchor) positionCard(lastAnchor);
     },

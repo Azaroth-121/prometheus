@@ -1,11 +1,23 @@
 /// <reference types="chrome" />
 import { getActiveSiteAdapter, getText, setText } from './sites';
 import { createOverlay } from './ui';
-import type { OptimizeMessage, OptimizeMessageResponse } from '../background';
+import type { OptimizeMessage, OptimizeMessageResponse, OutcomeMessage } from '../background';
+import type { OptimizeOutcome } from '@prometheus/shared-types';
 
 const MIN_LENGTH = 12;
 const DEBOUNCE_MS = 900;
 const RESPONSE_TIMEOUT_MS = 25_000;
+
+/** Best-effort, fire-and-forget -- same as the popup's own submitOutcome(). */
+function submitOutcome(requestId: string, outcome: OptimizeOutcome) {
+  if (!chrome.runtime?.id) return;
+  const message: OutcomeMessage = { type: 'OUTCOME_REQUEST', request_id: requestId, outcome };
+  try {
+    chrome.runtime.sendMessage(message, () => void chrome.runtime.lastError);
+  } catch {
+    // Feedback signal is best-effort; swallow.
+  }
+}
 
 function init() {
   const adapter = getActiveSiteAdapter();
@@ -15,7 +27,7 @@ function init() {
   let debounceTimer: ReturnType<typeof window.setTimeout> | undefined;
   let currentInput: HTMLElement | null = null;
 
-  overlay.onBadgeClick(() => {
+  function runOptimize() {
     if (!currentInput) return;
 
     // Reloading/updating the extension orphans any content script already
@@ -71,10 +83,20 @@ function init() {
           return;
         }
 
-        const { optimized_prompt: optimizedPrompt, upgrade_notes: upgradeNotes } = response.data;
-        overlay.showResult(optimizedPrompt, upgradeNotes, () => {
-          if (currentInput) setText(currentInput, optimizedPrompt);
-        });
+        const { request_id: requestId, optimized_prompt: optimizedPrompt, upgrade_notes: upgradeNotes } = response.data;
+        overlay.showResult(
+          optimizedPrompt,
+          upgradeNotes,
+          () => {
+            if (currentInput) setText(currentInput, optimizedPrompt);
+            submitOutcome(requestId, 'accepted');
+          },
+          () => submitOutcome(requestId, 'rejected'),
+          () => {
+            submitOutcome(requestId, 'retried');
+            runOptimize();
+          },
+        );
       });
     } catch {
       // Belt-and-suspenders: chrome.runtime.id can still be truthy at the
@@ -84,7 +106,9 @@ function init() {
       window.clearTimeout(timeoutId);
       overlay.showError('Prometheus was updated — please refresh this page and try again.');
     }
-  });
+  }
+
+  overlay.onBadgeClick(() => runOptimize());
 
   function handleInput() {
     overlay.hideBadge();

@@ -81,3 +81,16 @@ export interface UsageSummary {
   tokens_used: number;
   tokens_limit: number;
 }
+
+/**
+ * Contract for POST /api/v1/optimize/outcome. `accepted` is inferred client-side
+ * from the existing Copy/Replace actions; `rejected`/`retried` are explicit new
+ * buttons. `edited` is deliberately not included -- there's no edit affordance
+ * anywhere in the UI yet.
+ */
+export type OptimizeOutcome = 'accepted' | 'rejected' | 'retried';
+
+export interface SubmitOutcomeRequestBody {
+  request_id: string;
+  outcome: OptimizeOutcome;
+}

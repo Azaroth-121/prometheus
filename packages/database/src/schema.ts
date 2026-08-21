@@ -120,6 +120,10 @@ export const optimizationRequests = pgTable(
     estimatedCost: numeric('estimated_cost', { precision: 10, scale: 4 }),
     latencyMs: integer('latency_ms'),
     errorCode: text('error_code'),
+    // Null means no signal given -- the common case, since Copy/Replace/Not
+    // helpful/Try again are all optional user actions after a result.
+    outcome: text('outcome', { enum: ['accepted', 'rejected', 'retried'] }),
+    outcomeRecordedAt: timestamp('outcome_recorded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
     completedAt: timestamp('completed_at', { withTimezone: true }),
   },

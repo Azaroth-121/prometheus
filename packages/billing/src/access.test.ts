@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
@@ -30,10 +30,16 @@ describe('usage and plan access control', () => {
     container = await new PostgreSqlContainer('postgres:16-alpine').start();
 
     const dir = dirname(fileURLToPath(import.meta.url));
-    const initSql = readFileSync(join(dir, '..', '..', 'database', 'drizzle', '0000_init.sql'), 'utf-8');
+    const migrationsDir = join(dir, '..', '..', 'database', 'drizzle');
+    // Applies every migration file in order, same as a real deploy would --
+    // not just 0000_init.sql -- so this test's schema never drifts from the
+    // live database's actual schema as new migrations are added.
+    const migrationFiles = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
     const client = new Client({ connectionString: container.getConnectionUri() });
     await client.connect();
-    await client.query(initSql);
+    for (const file of migrationFiles) {
+      await client.query(readFileSync(join(migrationsDir, file), 'utf-8'));
+    }
     await client.end();
 
     pool = new Pool({ connectionString: container.getConnectionUri() });

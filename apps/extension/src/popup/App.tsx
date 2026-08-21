@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
 import { isOptimizeError } from '@prometheus/shared-types';
-import { getUsage, optimize } from '../lib/api';
+import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
 import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
 
@@ -96,8 +96,7 @@ export default function App() {
     setTab('optimize');
   }
 
-  async function handleOptimize(event: FormEvent) {
-    event.preventDefault();
+  async function runOptimize() {
     setBusy(true);
     setError(null);
     setResult(null);
@@ -122,10 +121,27 @@ export default function App() {
     }
   }
 
+  async function handleOptimize(event: FormEvent) {
+    event.preventDefault();
+    await runOptimize();
+  }
+
   async function handleCopy() {
     if (!result) return;
     await navigator.clipboard.writeText(result.optimized_prompt);
     setCopied(true);
+    void submitOutcome(result.request_id, 'accepted');
+  }
+
+  async function handleNotHelpful() {
+    if (!result) return;
+    void submitOutcome(result.request_id, 'rejected');
+  }
+
+  async function handleTryAgain() {
+    if (!result) return;
+    void submitOutcome(result.request_id, 'retried');
+    await runOptimize();
   }
 
   return (
@@ -215,9 +231,17 @@ export default function App() {
                           ))}
                         </ul>
                       )}
-                      <Button variant="secondary" onClick={handleCopy}>
-                        {copied ? 'Copied ✓' : 'Copy'}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="secondary" onClick={handleCopy} className="flex-1">
+                          {copied ? 'Copied ✓' : 'Copy'}
+                        </Button>
+                        <Button variant="ghost" onClick={handleTryAgain} title="Try again">
+                          ↻
+                        </Button>
+                        <Button variant="ghost" onClick={handleNotHelpful} title="Not helpful">
+                          👎
+                        </Button>
+                      </div>
                       <p className="text-xs text-ink-muted">
                         {result.usage.remaining_requests} requests remaining
                       </p>

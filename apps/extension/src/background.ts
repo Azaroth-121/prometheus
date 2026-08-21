@@ -1,6 +1,7 @@
 /// <reference types="chrome" />
 import type {
   OptimizationMode,
+  OptimizeOutcome,
   OptimizeRequestSource,
   OptimizeResponse,
 } from '@prometheus/shared-types';
@@ -30,12 +31,24 @@ export interface OptimizeMessage {
   client_request_id: string;
 }
 
+export interface OutcomeMessage {
+  type: 'OUTCOME_REQUEST';
+  request_id: string;
+  outcome: OptimizeOutcome;
+}
+
 export type OptimizeMessageResponse =
   | { ok: true; data: OptimizeResponse }
   | { ok: false; error: 'NOT_SIGNED_IN' | 'NETWORK_ERROR'; detail?: string };
 
+export type OutcomeMessageResponse = { ok: boolean };
+
 function isOptimizeMessage(message: unknown): message is OptimizeMessage {
   return typeof message === 'object' && message !== null && (message as { type?: unknown }).type === 'OPTIMIZE_REQUEST';
+}
+
+function isOutcomeMessage(message: unknown): message is OutcomeMessage {
+  return typeof message === 'object' && message !== null && (message as { type?: unknown }).type === 'OUTCOME_REQUEST';
 }
 
 async function handleOptimizeMessage(message: OptimizeMessage): Promise<OptimizeMessageResponse> {
@@ -62,19 +75,42 @@ async function handleOptimizeMessage(message: OptimizeMessage): Promise<Optimize
   return { ok: true, data };
 }
 
+/** Best-effort, same as the popup's own submitOutcome() -- never surfaces an error to the user. */
+async function handleOutcomeMessage(message: OutcomeMessage): Promise<OutcomeMessageResponse> {
+  const accessToken = await getAccessToken();
+  if (!accessToken) return { ok: false };
+
+  try {
+    await fetch(`${API_BASE_URL}/api/v1/optimize/outcome`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ request_id: message.request_id, outcome: message.outcome }),
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  if (!isOptimizeMessage(message)) return undefined;
+  if (isOptimizeMessage(message)) {
+    // A rejection anywhere above (storage, refresh, fetch, JSON parsing) that
+    // isn't caught here means sendResponse never fires, and the content
+    // script's callback simply hangs forever — there's no timeout on the
+    // other end of chrome.runtime.sendMessage. Wrapping the whole thing is
+    // what actually matters, not catching each failure mode individually.
+    handleOptimizeMessage(message)
+      .catch((err): OptimizeMessageResponse => ({ ok: false, error: 'NETWORK_ERROR', detail: String(err) }))
+      .then(sendResponse);
+    return true; // keep the message channel open for the async sendResponse above
+  }
 
-  // A rejection anywhere above (storage, refresh, fetch, JSON parsing) that
-  // isn't caught here means sendResponse never fires, and the content
-  // script's callback simply hangs forever — there's no timeout on the
-  // other end of chrome.runtime.sendMessage. Wrapping the whole thing is
-  // what actually matters, not catching each failure mode individually.
-  handleOptimizeMessage(message)
-    .catch(
-      (err): OptimizeMessageResponse => ({ ok: false, error: 'NETWORK_ERROR', detail: String(err) }),
-    )
-    .then(sendResponse);
+  if (isOutcomeMessage(message)) {
+    handleOutcomeMessage(message)
+      .catch((): OutcomeMessageResponse => ({ ok: false }))
+      .then(sendResponse);
+    return true;
+  }
 
-  return true; // keep the message channel open for the async sendResponse above
+  return undefined;
 });

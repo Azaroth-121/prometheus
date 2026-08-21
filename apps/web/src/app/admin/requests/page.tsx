@@ -18,6 +18,7 @@ export default async function AdminRequestsPage({
       mode: optimizationRequests.mode,
       status: optimizationRequests.status,
       errorCode: optimizationRequests.errorCode,
+      outcome: optimizationRequests.outcome,
       latencyMs: optimizationRequests.latencyMs,
       createdAt: optimizationRequests.createdAt,
       completedAt: optimizationRequests.completedAt,
@@ -67,6 +68,9 @@ export default async function AdminRequestsPage({
                 {r.status}
               </p>
               {r.errorCode && <p className="text-ink-muted">{r.errorCode}</p>}
+              {r.outcome && (
+                <p className={r.outcome === 'rejected' ? 'text-red-400' : 'text-ink-muted'}>{r.outcome}</p>
+              )}
             </div>
           </div>
         ))}
