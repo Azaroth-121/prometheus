@@ -11,7 +11,7 @@ import {
 import { requireRole, verifyAccessToken, toProfile } from '@prometheus/auth';
 import { profiles, optimizationRequests, systemEvents } from '@prometheus/database';
 import { checkUsageAgainstPlan, getCurrentPlanInfo } from '@prometheus/billing';
-import { buildSystemPrompt, PROMETHEUS_MODEL, PROMETHEUS_OUTPUT_JSON_SCHEMA, PROMETHEUS_PROMPT_VERSION } from '@prometheus/prompts';
+import { getActivePromptConfig, PROMETHEUS_OUTPUT_JSON_SCHEMA } from '@prometheus/prompts';
 import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const config = await getActivePromptConfig(db, body.mode);
+  if (!config) {
+    await logSystemEvent(requestId, 'error', 'prompt_config_missing', `No published prompt_configs row for mode "${body.mode}".`);
+    return respondError(requestId, 500, 'UPSTREAM_ERROR', 'The optimization service is temporarily unavailable.');
+  }
+
   try {
     await db.insert(optimizationRequests).values({
       id: requestId,
@@ -102,8 +108,8 @@ export async function POST(request: NextRequest) {
       clientRequestId: body.client_request_id,
       source: body.source,
       mode: body.mode,
-      promptVersion: PROMETHEUS_PROMPT_VERSION,
-      model: PROMETHEUS_MODEL,
+      promptVersion: `${config.name}:${config.version}`,
+      model: config.model,
       status: 'pending',
       inputCharacterCount: body.input.length,
     });
@@ -121,9 +127,9 @@ export async function POST(request: NextRequest) {
   let completion: OpenAI.Chat.Completions.ChatCompletion;
   try {
     completion = await openai.chat.completions.create({
-      model: PROMETHEUS_MODEL,
+      model: config.model,
       messages: [
-        { role: 'system', content: buildSystemPrompt(body.mode) },
+        { role: 'system', content: config.systemPrompt },
         { role: 'user', content: body.input },
       ],
       response_format: { type: 'json_schema', json_schema: PROMETHEUS_OUTPUT_JSON_SCHEMA },

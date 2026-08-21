@@ -16,6 +16,7 @@ export default async function AdminRequestsPage({
       userId: optimizationRequests.userId,
       source: optimizationRequests.source,
       mode: optimizationRequests.mode,
+      promptVersion: optimizationRequests.promptVersion,
       status: optimizationRequests.status,
       errorCode: optimizationRequests.errorCode,
       outcome: optimizationRequests.outcome,
@@ -61,6 +62,7 @@ export default async function AdminRequestsPage({
               <p className="text-ink-muted">
                 {r.createdAt.toLocaleString()}
                 {r.latencyMs != null ? ` · ${r.latencyMs}ms` : ''}
+                {` · ${r.promptVersion}`}
               </p>
             </div>
             <div className="text-right">
