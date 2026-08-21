@@ -1,12 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
-import { isOptimizeError } from '@prometheus/shared-types';
+import { isOptimizeError, OPTIMIZATION_MODES } from '@prometheus/shared-types';
 import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
 import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
-
-const MODES = ['standard', 'image', 'code'] as const satisfies readonly OptimizationMode[];
 
 // Mirrors packages/billing/src/plans.ts — placeholder pricing. Each
 // payment is one-time (30 days of access), not a recurring subscription.
@@ -202,7 +200,7 @@ export default function App() {
             {tab === 'optimize' && (
               <motion.div key="optimize" {...fadeSlide} className="flex flex-col gap-3">
                 <form className="flex flex-col gap-2" onSubmit={handleOptimize}>
-                  <SegmentedControl options={MODES} value={mode} onChange={setMode} layoutId="mode" />
+                  <SegmentedControl options={OPTIMIZATION_MODES} value={mode} onChange={setMode} layoutId="mode" />
                   <TextArea
                     placeholder="Paste your rough prompt..."
                     value={input}

@@ -8,7 +8,7 @@ import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '@prometheus/database';
 import { profiles, promptConfigs, type Database } from '@prometheus/database';
-import { getActivePromptConfig } from './config';
+import { createDraftPromptConfig, getActivePromptConfig, listPromptConfigs, publishPromptConfig } from './config';
 
 /**
  * Same real-Postgres-via-Testcontainers approach as
@@ -139,5 +139,94 @@ describe('prompt config registry', () => {
         createdBy: adminId,
       })
     ).rejects.toThrow();
+  });
+
+  it('listPromptConfigs returns every row regardless of status', async () => {
+    const adminId = await seedAdmin();
+    await db.insert(promptConfigs).values([
+      { name: 'standard', version: 'v1.0', systemPrompt: 'a', model: 'gpt-4o-mini', status: 'published', createdBy: adminId },
+      { name: 'standard', version: 'v0.9', systemPrompt: 'b', model: 'gpt-4o-mini', status: 'archived', createdBy: adminId },
+      { name: 'image', version: 'v1.1', systemPrompt: 'c', model: 'gpt-4o-mini', status: 'draft', createdBy: adminId },
+    ]);
+
+    const configs = await listPromptConfigs(db);
+
+    expect(configs).toHaveLength(3);
+  });
+
+  it('createDraftPromptConfig inserts a draft row', async () => {
+    const adminId = await seedAdmin();
+
+    const draft = await createDraftPromptConfig(db, {
+      name: 'code',
+      version: 'v1.1',
+      systemPrompt: 'a new code prompt',
+      model: 'gpt-4o-mini',
+      createdBy: adminId,
+    });
+
+    expect(draft.status).toBe('draft');
+    expect(draft.publishedAt).toBeNull();
+  });
+
+  it('createDraftPromptConfig rejects a duplicate name+version', async () => {
+    const adminId = await seedAdmin();
+    await createDraftPromptConfig(db, {
+      name: 'code',
+      version: 'v1.1',
+      systemPrompt: 'first',
+      model: 'gpt-4o-mini',
+      createdBy: adminId,
+    });
+
+    await expect(
+      createDraftPromptConfig(db, {
+        name: 'code',
+        version: 'v1.1',
+        systemPrompt: 'second, same name+version',
+        model: 'gpt-4o-mini',
+        createdBy: adminId,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('publishPromptConfig archives the old published row and publishes the draft', async () => {
+    const adminId = await seedAdmin();
+    const [oldRow] = await db
+      .insert(promptConfigs)
+      .values({ name: 'standard', version: 'v1.0', systemPrompt: 'old', model: 'gpt-4o-mini', status: 'published', createdBy: adminId })
+      .returning({ id: promptConfigs.id });
+    const draft = await createDraftPromptConfig(db, {
+      name: 'standard',
+      version: 'v1.1',
+      systemPrompt: 'new',
+      model: 'gpt-4o-mini',
+      createdBy: adminId,
+    });
+
+    const published = await publishPromptConfig(db, draft.id);
+
+    expect(published.status).toBe('published');
+    expect(published.publishedAt).not.toBeNull();
+
+    const [old] = await db.select().from(promptConfigs).where(eq(promptConfigs.id, oldRow!.id));
+    expect(old?.status).toBe('archived');
+
+    const active = await getActivePromptConfig(db, 'standard');
+    expect(active?.id).toBe(draft.id);
+  });
+
+  it('publishPromptConfig rejects a target that is not currently a draft', async () => {
+    const adminId = await seedAdmin();
+    const [publishedRow] = await db
+      .insert(promptConfigs)
+      .values({ name: 'image', version: 'v1.0', systemPrompt: 'already live', model: 'gpt-4o-mini', status: 'published', createdBy: adminId })
+      .returning({ id: promptConfigs.id });
+
+    await expect(publishPromptConfig(db, publishedRow!.id)).rejects.toThrow('Only draft configs can be published.');
+  });
+
+  it('publishPromptConfig rejects an unknown id', async () => {
+    await expect(publishPromptConfig(db, crypto.randomUUID())).rejects.toThrow('Prompt config not found.');
   });
 });

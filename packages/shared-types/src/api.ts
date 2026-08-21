@@ -7,6 +7,8 @@
 
 export type OptimizationMode = 'standard' | 'image' | 'code';
 
+export const OPTIMIZATION_MODES: readonly OptimizationMode[] = ['standard', 'image', 'code'];
+
 export type OptimizeRequestSource =
   | 'extension_popup'
   | 'extension_context_menu'

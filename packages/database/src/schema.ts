@@ -242,6 +242,7 @@ export type OptimizationRequestRow = typeof optimizationRequests.$inferSelect;
 export type NewOptimizationRequestRow = typeof optimizationRequests.$inferInsert;
 export type PromptHistoryRow = typeof promptHistory.$inferSelect;
 export type PromptConfigRow = typeof promptConfigs.$inferSelect;
+export type NewPromptConfigRow = typeof promptConfigs.$inferInsert;
 export type AdminAuditLogRow = typeof adminAuditLogs.$inferSelect;
 export type SystemEventRow = typeof systemEvents.$inferSelect;
 export type WebhookEventRow = typeof webhookEvents.$inferSelect;

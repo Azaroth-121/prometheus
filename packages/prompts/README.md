@@ -10,22 +10,8 @@ The actual system prompt text is **not** in this package's source anymore for li
 
 ## Publishing a new prompt version
 
-No admin UI yet — do this directly against Postgres (locally against docker-compose Postgres first; against live Azure Postgres via the usual temporary-firewall-rule + `DATABASE_URL` process).
+Use the admin UI at `/admin/prompt-configs` (`apps/web/src/app/admin/prompt-configs/page.tsx` + `actions.ts`) — sign in with an admin/super_admin account. Each mode's section shows its current published version, any drafts, and a "New draft" form pre-filled with the currently-published text so you're editing, not starting blank. Saving a draft writes a `status: 'draft'` row (`createDraftPromptConfig`); clicking "Publish" on a draft archives whatever's currently published for that mode and publishes the draft, atomically (`publishPromptConfig`, wrapped in a DB transaction — the partial unique index guarantees only one `published` row per name at any moment). Every action is admin-gated independently of the `/admin` layout's own check (`requireAdmin`, defense in depth) and writes an `admin_audit_logs` row.
 
-1. Insert the new version as a draft:
-   ```sql
-   insert into prompt_configs (name, version, system_prompt, model, status, created_by)
-   values ('standard', 'v1.1', '...new prompt text...', 'gpt-4o-mini', 'draft',
-           (select id from profiles where role in ('admin', 'super_admin') order by created_at asc limit 1));
-   ```
-2. Review it however you like (there's no preview UI — read the row back, or point a local dev server's `DATABASE_URL` at a copy of the DB).
-3. Promote it in one transaction (the partial unique index means only one of these can hold `status = 'published'` per `name`, so do the archive and the publish together):
-   ```sql
-   begin;
-   update prompt_configs set status = 'archived' where name = 'standard' and status = 'published';
-   update prompt_configs set status = 'published', published_at = now() where name = 'standard' and version = 'v1.1';
-   commit;
-   ```
-4. The next `/api/v1/optimize` request for that mode picks it up immediately — `getActivePromptConfig` reads fresh on every call, no caching, no redeploy needed.
+The next `/api/v1/optimize` request for that mode picks up a newly-published version immediately — `getActivePromptConfig` reads fresh on every call, no caching, no redeploy needed.
 
-If a mode ever has no published row (e.g. archived without a replacement published in the same transaction), the optimize route fails loud with a 500 rather than silently falling back to old code-level defaults — republish to restore it.
+If a mode ever has no published row (e.g. archived without a replacement published in the same transaction), the optimize route fails loud with a 500 rather than silently falling back to old code-level defaults — publish a replacement to restore it.
