@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { getCurrentProfile } from '@prometheus/auth';
-import { plans } from '@prometheus/database';
-import { createOrder } from '@prometheus/billing';
+import { plans, subscriptions } from '@prometheus/database';
+import { createCheckoutSession, createStripeClient } from '@prometheus/billing';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
@@ -28,31 +28,37 @@ export async function POST(request: NextRequest) {
 
   const [plan] = await db.select().from(plans).where(eq(plans.code, body.planCode)).limit(1);
 
-  if (!plan || Number(plan.monthlyPrice) <= 0) {
+  if (!plan || !plan.providerPlanId) {
     return NextResponse.json({ error: 'Plan is not available for checkout.' }, { status: 400 });
   }
 
-  const paypalConfig = {
-    clientId: env.paypalClientId,
-    clientSecret: env.paypalClientSecret,
-    apiBase: env.paypalApiBase,
-  };
+  // Reuse the same Stripe Customer across purchases/upgrades instead of
+  // letting Stripe create a new one every time.
+  const [priorSubscription] = await db
+    .select({ providerCustomerId: subscriptions.providerCustomerId })
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, profile.id))
+    .orderBy(desc(subscriptions.createdAt))
+    .limit(1);
+
+  const stripe = createStripeClient(env.stripeSecretKey);
 
   try {
-    const order = await createOrder(paypalConfig, {
-      amount: Number(plan.monthlyPrice).toFixed(2),
-      currency: plan.currency,
-      returnUrl: `${env.appUrl}/dashboard/billing/success?plan=${plan.code}`,
+    const checkoutSession = await createCheckoutSession(stripe, {
+      customerId: priorSubscription?.providerCustomerId ?? null,
+      customerEmail: profile.email,
+      userId: profile.id,
+      priceId: plan.providerPlanId,
+      successUrl: `${env.appUrl}/dashboard/billing/success`,
       cancelUrl: `${env.appUrl}/dashboard/billing`,
     });
 
-    const approveUrl = order.links.find((link) => link.rel === 'approve')?.href;
-    if (!approveUrl) {
-      return NextResponse.json({ error: 'PayPal did not return an approval link.' }, { status: 502 });
+    if (!checkoutSession.url) {
+      return NextResponse.json({ error: 'Stripe did not return a checkout URL.' }, { status: 502 });
     }
 
-    return NextResponse.json({ approve_url: approveUrl });
+    return NextResponse.json({ checkout_url: checkoutSession.url });
   } catch (err) {
-    return NextResponse.json({ error: 'Failed to create PayPal order.', detail: String(err) }, { status: 502 });
+    return NextResponse.json({ error: 'Failed to create checkout session.', detail: String(err) }, { status: 502 });
   }
 }

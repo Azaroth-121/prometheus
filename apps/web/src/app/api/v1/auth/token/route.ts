@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     access_token: issueAccessToken(profile.id, env.extensionJwtSecret),
-    refresh_token: issueRefreshToken(profile.id, env.extensionJwtSecret),
+    refresh_token: await issueRefreshToken(db, profile.id, env.extensionJwtSecret),
     // Not sensitive (the JWT itself carries no PII by design) -- returned
     // directly so the extension popup can show "Signed in as ..." without a
     // second round trip. Stored alongside the tokens in chrome.storage.local.

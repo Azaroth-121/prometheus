@@ -37,7 +37,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Billing information:</strong> if you subscribe to a paid plan, payment is
-            processed directly by PayPal. We store your PayPal order/subscription reference and
+            processed directly by Stripe. We store your Stripe customer/subscription reference and
             plan status — we never see or store your card or bank details.
           </li>
         </ul>
@@ -51,7 +51,7 @@ export default function PrivacyPage() {
             <strong>OpenAI</strong> — processes the prompt text you submit for optimization.
           </li>
           <li>
-            <strong>PayPal</strong> — processes payments for paid plans.
+            <strong>Stripe</strong> — processes payments for paid plans.
           </li>
           <li>
             <strong>Make.com</strong> — delivers transactional emails (sign-up verification,

@@ -91,7 +91,24 @@ export async function signIn(email: string, password: string): Promise<{ ok: tru
   return { ok: true };
 }
 
+/**
+ * Revocation is best-effort: local sign-out must never be blocked by a
+ * network hiccup, but when it does reach the server the refresh token is
+ * actually invalidated there too (not just forgotten locally).
+ */
 export async function signOut(): Promise<void> {
+  const session = await getStoredSession();
+  if (session?.refresh_token) {
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/auth/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      });
+    } catch {
+      // Best-effort; local sign-out proceeds regardless.
+    }
+  }
   await clearStoredSession();
 }
 

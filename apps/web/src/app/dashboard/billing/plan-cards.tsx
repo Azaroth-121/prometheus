@@ -32,12 +32,12 @@ export function PlanCards() {
         body: JSON.stringify({ planCode }),
       });
       const data = await response.json();
-      if (!response.ok || !data.approve_url) {
+      if (!response.ok || !data.checkout_url) {
         setError(data.error ?? 'Could not start checkout.');
         setLoadingCode(null);
         return;
       }
-      window.location.href = data.approve_url;
+      window.location.href = data.checkout_url;
     } catch {
       setError('Could not reach the billing service.');
       setLoadingCode(null);
@@ -53,13 +53,13 @@ export function PlanCards() {
             <h2 className="font-display text-lg font-semibold text-ink">{plan.name}</h2>
             <p className="text-3xl font-bold text-ink">
               ${plan.price}
-              <span className="text-sm font-normal text-ink-muted"> / 30 days</span>
+              <span className="text-sm font-normal text-ink-muted"> / month</span>
             </p>
             <p className="text-sm text-ink-muted">
-              {plan.requestLimit.toLocaleString()} optimizations / 30 days
+              {plan.requestLimit.toLocaleString()} optimizations / month
             </p>
             <Button onClick={() => handlePay(plan.code)} disabled={loadingCode !== null}>
-              {loadingCode === plan.code ? 'Redirecting…' : `Pay $${plan.price} for ${plan.name}`}
+              {loadingCode === plan.code ? 'Redirecting…' : `Subscribe to ${plan.name}`}
             </Button>
           </Card>
         ))}

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.36.4",
+    "stripe": "^17.4.0",
     "@prometheus/database": "workspace:*",
     "@prometheus/shared-types": "workspace:*"
   },

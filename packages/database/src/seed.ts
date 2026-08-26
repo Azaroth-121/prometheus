@@ -19,11 +19,16 @@ import { createDatabaseClient, plans } from './client';
 // circular workspace dependency (billing already depends on database for its
 // query helpers). Keep in sync with packages/billing/src/plans.ts by hand --
 // small, rarely-changed list.
+//
+// providerPlanId: the Stripe recurring Price id (price_...) for each paid
+// tier. IMPORTANT: these are LIVE-MODE ids -- see the matching note in
+// packages/billing/src/plans.ts for the test-mode equivalents to use when
+// seeding a local dev database against a sk_test_... key.
 const BILLING_PLAN_DEFINITIONS = [
-  { code: 'free', name: 'Free', monthlyPrice: '0.00', currency: 'USD', monthlyRequestLimit: 20, monthlyTokenLimit: 50_000, maximumInputLength: 2000 },
-  { code: 'pro', name: 'Pro', monthlyPrice: '20.00', currency: 'USD', monthlyRequestLimit: 500, monthlyTokenLimit: 1_000_000, maximumInputLength: 4000 },
-  { code: 'business', name: 'Business', monthlyPrice: '50.00', currency: 'USD', monthlyRequestLimit: 1500, monthlyTokenLimit: 3_000_000, maximumInputLength: 4000 },
-  { code: 'enterprise', name: 'Enterprise', monthlyPrice: '100.00', currency: 'USD', monthlyRequestLimit: 5000, monthlyTokenLimit: 10_000_000, maximumInputLength: 4000 },
+  { code: 'free', name: 'Free', monthlyPrice: '0.00', currency: 'USD', monthlyRequestLimit: 20, monthlyTokenLimit: 50_000, maximumInputLength: 2000, providerPlanId: null as string | null },
+  { code: 'pro', name: 'Pro', monthlyPrice: '20.00', currency: 'USD', monthlyRequestLimit: 500, monthlyTokenLimit: 1_000_000, maximumInputLength: 4000, providerPlanId: 'price_1U8jE9IM9o3mvQy9LQoPIPqv' as string | null },
+  { code: 'business', name: 'Business', monthlyPrice: '50.00', currency: 'USD', monthlyRequestLimit: 1500, monthlyTokenLimit: 3_000_000, maximumInputLength: 4000, providerPlanId: 'price_1U8jEAIM9o3mvQy9LXWJRWIe' as string | null },
+  { code: 'enterprise', name: 'Enterprise', monthlyPrice: '100.00', currency: 'USD', monthlyRequestLimit: 5000, monthlyTokenLimit: 10_000_000, maximumInputLength: 4000, providerPlanId: 'price_1U8jEBIM9o3mvQy99t61ea0R' as string | null },
 ];
 
 async function main() {
@@ -45,6 +50,7 @@ async function main() {
         monthlyRequestLimit: plan.monthlyRequestLimit,
         monthlyTokenLimit: plan.monthlyTokenLimit,
         maximumInputLength: plan.maximumInputLength,
+        providerPlanId: plan.providerPlanId,
       })
       .onConflictDoUpdate({
         target: plans.code,
@@ -55,6 +61,10 @@ async function main() {
           monthlyRequestLimit: sql`excluded.monthly_request_limit`,
           monthlyTokenLimit: sql`excluded.monthly_token_limit`,
           maximumInputLength: sql`excluded.maximum_input_length`,
+          // Only overwrite if this run actually provides a value -- keeps a
+          // previously-configured Stripe Price id from being wiped out by a
+          // re-run of the seed that hasn't been updated with it yet.
+          providerPlanId: plan.providerPlanId ? sql`excluded.provider_plan_id` : sql`plans.provider_plan_id`,
         },
       });
     console.log(`Seeded plan: ${plan.code}`);

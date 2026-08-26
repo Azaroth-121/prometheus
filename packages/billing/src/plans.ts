@@ -1,25 +1,35 @@
 export interface BillingPlanDefinition {
   code: string;
   name: string;
-  /** Decimal string, PayPal's format (e.g. "1.00"). */
+  /** Decimal string (e.g. "20.00"). */
   monthlyPrice: string;
   currency: string;
   monthlyRequestLimit: number;
   monthlyTokenLimit: number;
   maximumInputLength: number;
+  /** Stripe recurring Price id (price_...), null for the free tier. Populated once created in the Stripe Dashboard -- see packages/billing/README.md. */
+  providerPlanId: string | null;
 }
 
 /**
  * Placeholder tiers (plan doc section 9: Free/Pro, Team deferred). Pricing
- * is explicitly a placeholder — the doc says not to finalize pricing until
- * OpenAI cost, PayPal fees, and margin are modeled. This is tested against
- * a live PayPal account, so every test payment is a real charge.
+ * is explicitly a placeholder -- the doc says not to finalize until OpenAI
+ * cost and margin are modeled.
  *
- * Each paid tier is a one-time payment (PayPal Orders API) granting 30 days
- * of access, not a recurring subscription — PayPal Subscriptions require a
- * "Reference Transactions" capability most Business accounts don't have
- * enabled by default. See packages/billing/src/access.ts for how the
- * 30-day window is tracked and expired.
+ * Real recurring subscriptions via Stripe Checkout (mode: 'subscription') --
+ * see packages/billing/src/access.ts for how the current billing period is
+ * tracked, and apps/web/src/app/api/webhooks/stripe/route.ts for how Stripe
+ * keeps `status`/period bounds in sync as the source of truth.
+ *
+ * IMPORTANT: the providerPlanId values below are LIVE-MODE Stripe Price ids.
+ * Test and live mode are entirely separate object namespaces in Stripe --
+ * these will not resolve against a test secret key. For local dev against a
+ * sk_test_... key, temporarily swap in the test-mode equivalents instead:
+ *   pro: price_1U8j00IM9o3mvQy9WLZcWd8Y
+ *   business: price_1U8j01IM9o3mvQy97ZeO8NFp
+ *   enterprise: price_1U8j01IM9o3mvQy9JgEJSSCl
+ * (and re-run `pnpm --filter @prometheus/database run db:seed` locally) --
+ * do not commit that swap back.
  */
 export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
   {
@@ -30,6 +40,7 @@ export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
     monthlyRequestLimit: 20,
     monthlyTokenLimit: 50_000,
     maximumInputLength: 2000,
+    providerPlanId: null,
   },
   {
     code: 'pro',
@@ -39,6 +50,7 @@ export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
     monthlyRequestLimit: 500,
     monthlyTokenLimit: 1_000_000,
     maximumInputLength: 4000,
+    providerPlanId: 'price_1U8jE9IM9o3mvQy9LQoPIPqv',
   },
   {
     code: 'business',
@@ -48,6 +60,7 @@ export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
     monthlyRequestLimit: 1500,
     monthlyTokenLimit: 3_000_000,
     maximumInputLength: 4000,
+    providerPlanId: 'price_1U8jEAIM9o3mvQy9LXWJRWIe',
   },
   {
     code: 'enterprise',
@@ -57,5 +70,6 @@ export const BILLING_PLAN_DEFINITIONS: BillingPlanDefinition[] = [
     monthlyRequestLimit: 5000,
     monthlyTokenLimit: 10_000_000,
     maximumInputLength: 4000,
+    providerPlanId: 'price_1U8jEBIM9o3mvQy99t61ea0R',
   },
 ];

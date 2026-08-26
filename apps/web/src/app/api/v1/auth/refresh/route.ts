@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyRefreshToken, issueAccessToken } from '@prometheus/auth';
+import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 /**
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'refresh_token is required.' }, { status: 400 });
   }
 
-  const userId = verifyRefreshToken(body.refresh_token, env.extensionJwtSecret);
+  const userId = await verifyRefreshToken(db, body.refresh_token, env.extensionJwtSecret);
   if (!userId) {
     return NextResponse.json({ error: 'Invalid or expired refresh token.' }, { status: 401 });
   }

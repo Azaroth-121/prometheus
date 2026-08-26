@@ -1,87 +1,38 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { verifyWebhookSignature } from './client';
-import type { PayPalConfig, VerifyWebhookInput } from './types';
+import { describe, expect, it } from 'vitest';
+import Stripe from 'stripe';
+import { constructWebhookEvent, createStripeClient } from './client';
 
-const config: PayPalConfig = {
-  clientId: 'test-client-id',
-  clientSecret: 'test-client-secret',
-  apiBase: 'https://api-m.sandbox.paypal.com',
-};
+const SECRET = 'whsec_test_secret';
 
-const input: VerifyWebhookInput = {
-  authAlgo: 'SHA256withRSA',
-  certUrl: 'https://api.paypal.com/cert/abc',
-  transmissionId: 'txn-123',
-  transmissionSig: 'sig-abc',
-  transmissionTime: '2026-08-20T00:00:00Z',
-  webhookId: 'WH-TEST-ID',
-  webhookEvent: { id: 'evt-1', event_type: 'PAYMENT.CAPTURE.COMPLETED' },
-};
+/**
+ * Real cryptographic verification, not a mocked fetch -- unlike PayPal's
+ * verify-webhook-signature (a live API round-trip), Stripe's signing is a
+ * local HMAC-SHA256 check we can exercise for real with the SDK's own test
+ * helper for constructing a validly-signed header.
+ */
+describe('constructWebhookEvent', () => {
+  const stripe = createStripeClient('sk_test_dummy');
+  const payload = JSON.stringify({ id: 'evt_1', type: 'checkout.session.completed', data: { object: {} } });
 
-/** Routes by path so this works regardless of client.ts's internal OAuth
- * token caching -- the OAuth call may or may not happen depending on
- * whether a prior test in this file already warmed the module-level cache. */
-function mockFetch(onVerifyRequest: (body: Record<string, unknown>) => void) {
-  return vi.fn(async (url: string | URL, init?: RequestInit) => {
-    const path = url.toString();
+  it('accepts a payload with a validly-signed header', () => {
+    const header = stripe.webhooks.generateTestHeaderString({ payload, secret: SECRET });
 
-    if (path.endsWith('/v1/oauth2/token')) {
-      return new Response(JSON.stringify({ access_token: 'fake-token', expires_in: 3600 }), {
-        status: 200,
-      });
-    }
+    const event = constructWebhookEvent(stripe, payload, header, SECRET);
 
-    if (path.endsWith('/v1/notifications/verify-webhook-signature')) {
-      onVerifyRequest(JSON.parse(init!.body as string));
-      return new Response(JSON.stringify({ verification_status: 'SUCCESS' }), { status: 200 });
-    }
-
-    throw new Error(`Unexpected fetch to ${path}`);
-  });
-}
-
-describe('verifyWebhookSignature', () => {
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
+    expect(event.id).toBe('evt_1');
+    expect(event.type).toBe('checkout.session.completed');
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
+  it('rejects a payload whose body was tampered with after signing', () => {
+    const header = stripe.webhooks.generateTestHeaderString({ payload, secret: SECRET });
+    const tamperedPayload = JSON.stringify({ id: 'evt_1', type: 'customer.subscription.deleted', data: { object: {} } });
+
+    expect(() => constructWebhookEvent(stripe, tamperedPayload, header, SECRET)).toThrow(Stripe.errors.StripeSignatureVerificationError);
   });
 
-  it('maps every header/field onto the exact PayPal-documented request shape', async () => {
-    let capturedBody: Record<string, unknown> | undefined;
-    vi.stubGlobal('fetch', mockFetch((body) => (capturedBody = body)));
+  it('rejects a header signed with the wrong secret', () => {
+    const header = stripe.webhooks.generateTestHeaderString({ payload, secret: 'whsec_a_different_secret' });
 
-    const result = await verifyWebhookSignature(config, input);
-
-    expect(result).toBe(true);
-    expect(capturedBody).toEqual({
-      auth_algo: input.authAlgo,
-      cert_url: input.certUrl,
-      transmission_id: input.transmissionId,
-      transmission_sig: input.transmissionSig,
-      transmission_time: input.transmissionTime,
-      webhook_id: input.webhookId,
-      webhook_event: input.webhookEvent,
-    });
-  });
-
-  it('returns false when PayPal reports anything other than SUCCESS', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string | URL) => {
-        if (url.toString().endsWith('/v1/oauth2/token')) {
-          return new Response(JSON.stringify({ access_token: 'fake-token', expires_in: 3600 }), {
-            status: 200,
-          });
-        }
-        return new Response(JSON.stringify({ verification_status: 'FAILURE' }), { status: 200 });
-      })
-    );
-
-    const result = await verifyWebhookSignature(config, input);
-
-    expect(result).toBe(false);
+    expect(() => constructWebhookEvent(stripe, payload, header, SECRET)).toThrow(Stripe.errors.StripeSignatureVerificationError);
   });
 });

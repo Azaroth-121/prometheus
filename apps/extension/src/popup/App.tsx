@@ -6,8 +6,8 @@ import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
 import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
 
-// Mirrors packages/billing/src/plans.ts — placeholder pricing. Each
-// payment is one-time (30 days of access), not a recurring subscription.
+// Mirrors packages/billing/src/plans.ts — placeholder pricing. Real
+// recurring monthly subscriptions via Stripe Checkout.
 const UPGRADE_TIERS = [{ price: 20 }, { price: 50 }, { price: 100 }];
 
 // Same origin the extension calls for the API -- apps/web serves both from
@@ -252,8 +252,7 @@ export default function App() {
             {tab === 'billing' && (
               <motion.div key="billing" {...fadeSlide} className="flex flex-col gap-2 text-xs">
                 <p className="text-ink-muted">
-                  Each payment is one-time and grants 30 days of access — pay again anytime to
-                  extend.
+                  Paid plans auto-renew monthly. Manage or cancel anytime from the dashboard.
                 </p>
                 {UPGRADE_TIERS.map((tier) => (
                   <a
@@ -264,10 +263,10 @@ export default function App() {
                     className="group flex items-center justify-between rounded-lg border border-line bg-surface-raised px-3 py-2 text-ink transition-all hover:border-glow/60 hover:shadow-glow-sm"
                   >
                     <span>
-                      ${tier.price} <span className="text-ink-muted">/ 30 days</span>
+                      ${tier.price} <span className="text-ink-muted">/ month</span>
                     </span>
                     <span className="text-glow-cyan transition-transform group-hover:translate-x-0.5">
-                      Pay →
+                      Subscribe →
                     </span>
                   </a>
                 ))}

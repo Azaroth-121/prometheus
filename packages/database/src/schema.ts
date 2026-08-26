@@ -56,18 +56,20 @@ export const plans = pgTable('plans', {
   maximumInputLength: integer('maximum_input_length').notNull(),
   features: jsonb('features').notNull().default({}),
   isActive: boolean('is_active').notNull().default(true),
-  // Vestigial: leftover from the abandoned PayPal Subscriptions/Billing-Plans
-  // approach, replaced by the Orders API (one-time payments). Not written to
-  // anywhere in application code -- kept only so a future re-adoption of
-  // recurring billing has somewhere to put it, not because it's used today.
+  // The Stripe recurring Price id (price_...) for this tier -- see
+  // packages/billing/src/plans.ts and packages/database/src/seed.ts. Null
+  // for the free tier (never checked out).
   providerPlanId: text('provider_plan_id'),
 });
 
 // ---------------------------------------------------------------------------
 // subscriptions
 //
-// Despite the name/shape, these are one-time 30-day access grants (PayPal
-// Orders API), not recurring subscriptions -- see packages/billing.
+// Real recurring subscriptions via Stripe Checkout -- Stripe's webhook
+// (apps/web/src/app/api/webhooks/stripe/route.ts) is the source of truth for
+// status/period bounds here, not any redirect-back page. 'paypal' stays in
+// the provider enum only as a historical value for rows written before this
+// migration; nothing writes it going forward.
 // ---------------------------------------------------------------------------
 export const subscriptions = pgTable(
   'subscriptions',
@@ -76,7 +78,7 @@ export const subscriptions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
-    provider: text('provider', { enum: ['stripe', 'paypal'] }).notNull().default('paypal'),
+    provider: text('provider', { enum: ['stripe', 'paypal'] }).notNull().default('stripe'),
     providerCustomerId: text('provider_customer_id').notNull(),
     providerSubscriptionId: text('provider_subscription_id').notNull().unique(),
     planId: uuid('plan_id')
@@ -234,6 +236,31 @@ export const webhookEvents = pgTable(
 // optimization_requests instead (see packages/billing/src/access.ts). Dead
 // schema, dropped rather than carried forward.
 
+// ---------------------------------------------------------------------------
+// refresh_tokens
+//
+// The extension's refresh JWT (packages/auth/src/tokens.ts) carries a `jti`
+// equal to this row's id -- the row, not the signature alone, is what makes a
+// refresh token valid. A missing or revoked row means "no" even when the JWT
+// itself still verifies cleanly, which is what actually makes revocation
+// possible (a stateless JWT alone can never be un-issued).
+// ---------------------------------------------------------------------------
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().default(sql`now()`),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedReason: text('revoked_reason'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => [index('refresh_tokens_user_id_idx').on(table.userId)]
+);
+
 export type ProfileRow = typeof profiles.$inferSelect;
 export type NewProfileRow = typeof profiles.$inferInsert;
 export type PlanRow = typeof plans.$inferSelect;
@@ -246,3 +273,5 @@ export type NewPromptConfigRow = typeof promptConfigs.$inferInsert;
 export type AdminAuditLogRow = typeof adminAuditLogs.$inferSelect;
 export type SystemEventRow = typeof systemEvents.$inferSelect;
 export type WebhookEventRow = typeof webhookEvents.$inferSelect;
+export type RefreshTokenRow = typeof refreshTokens.$inferSelect;
+export type NewRefreshTokenRow = typeof refreshTokens.$inferInsert;

@@ -22,18 +22,11 @@ export const env = {
   get openaiApiKey() {
     return required('OPENAI_API_KEY', process.env.OPENAI_API_KEY);
   },
-  get paypalClientId() {
-    return required('PAYPAL_CLIENT_ID', process.env.PAYPAL_CLIENT_ID);
+  get stripeSecretKey() {
+    return required('STRIPE_SECRET_KEY', process.env.STRIPE_SECRET_KEY);
   },
-  get paypalClientSecret() {
-    return required('PAYPAL_CLIENT_SECRET', process.env.PAYPAL_CLIENT_SECRET);
-  },
-  get paypalApiBase() {
-    return required('PAYPAL_API_BASE', process.env.PAYPAL_API_BASE);
-  },
-  /** Blank until a webhook is registered against a publicly reachable URL — not required(). */
-  get paypalWebhookId(): string {
-    return process.env.PAYPAL_WEBHOOK_ID ?? '';
+  get stripeWebhookSecret() {
+    return required('STRIPE_WEBHOOK_SECRET', process.env.STRIPE_WEBHOOK_SECRET);
   },
   get appUrl() {
     return required('NEXT_PUBLIC_APP_URL', process.env.NEXT_PUBLIC_APP_URL);

@@ -1,0 +1,74 @@
+name: Deploy
+
+# Deliberately narrow: this workflow can only build+push an image and point
+# the already-deployed Container App at it. It never touches Bicep, never
+# regenerates a secret, and never runs a migration -- those stay exactly as
+# manual/human-gated as they are today (see deploy.ps1 and
+# packages/database/src/migrate.ts's own docstrings).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_NAME: acrprometheusdeveus201
+  IMAGE: acrprometheusdeveus201.azurecr.io/prometheus-web
+  RESOURCE_GROUP: rg-prometheus-dev-eus2-01
+  CONTAINER_APP: ca-prometheus-web-dev-eus2-01
+  HEALTH_URL: https://ca-prometheus-web-dev-eus2-01.delightfulcliff-8cc5b938.eastus2.azurecontainerapps.io/api/health
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      # Tagged with both the commit SHA (unambiguous, revertible) and
+      # :latest (kept for local dev/debugging convenience only -- the
+      # Container App below is always pointed at the SHA tag, never :latest).
+      - name: Build and push image
+        run: |
+          docker build -f apps/web/Dockerfile \
+            -t ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }} \
+            -t ${{ env.IMAGE }}:latest \
+            .
+          docker push ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }}
+
+      - name: Wait for health check
+        run: |
+          for i in $(seq 1 15); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.HEALTH_URL }}" || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "Healthy after $i attempt(s)."
+              exit 0
+            fi
+            echo "Attempt $i: got $status, retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Health check never returned 200 after deploy -- new revision may be broken. Investigate before assuming this deploy is live."
+          exit 1

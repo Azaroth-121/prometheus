@@ -3,7 +3,7 @@
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { eq } from 'drizzle-orm';
-import { getCurrentProfile, requireAdmin } from '@prometheus/auth';
+import { getCurrentProfile, requireAdmin, revokeAllRefreshTokensForUser } from '@prometheus/auth';
 import { profiles, adminAuditLogs } from '@prometheus/database';
 import type { AccountStatus } from '@prometheus/shared-types';
 import { auth } from '@/lib/auth';
@@ -28,6 +28,13 @@ export async function setUserStatusAction(formData: FormData) {
 
   await db.update(profiles).set({ status: nextStatus }).where(eq(profiles.id, userId));
 
+  // Suspending an account should also kill its live sessions -- changing
+  // `status` alone left every refresh token the user already held valid
+  // until natural expiry (up to 30 days), which defeated the point of
+  // suspending them in the first place.
+  const sessionsRevoked =
+    nextStatus === 'suspended' ? await revokeAllRefreshTokensForUser(db, userId, 'admin_suspended_account') : 0;
+
   const ipAddress = (await headers()).get('x-forwarded-for');
   await db.insert(adminAuditLogs).values({
     adminUserId: actorProfile.id,
@@ -35,7 +42,7 @@ export async function setUserStatusAction(formData: FormData) {
     targetType: 'profile',
     targetId: userId,
     beforeState: { status: targetProfile.status },
-    afterState: { status: nextStatus },
+    afterState: { status: nextStatus, sessionsRevoked },
     ipAddress: ipAddress,
     reason: reason || null,
   });

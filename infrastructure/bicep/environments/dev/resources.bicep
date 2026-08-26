@@ -26,11 +26,9 @@ param extensionJwtSecretValue string = ''
 @secure()
 param openaiApiKey string = ''
 @secure()
-param paypalClientId string = ''
+param stripeSecretKey string = ''
 @secure()
-param paypalClientSecret string = ''
-param paypalApiBase string = 'https://api-m.paypal.com'
-param paypalWebhookId string = ''
+param stripeWebhookSecret string = ''
 @secure()
 param cronSecretValue string = ''
 @secure()
@@ -84,8 +82,8 @@ var webAppPlainSecrets = [
   { name: 'AUTH_SECRET', value: authSecretValue }
   { name: 'EXTENSION_JWT_SECRET', value: extensionJwtSecretValue }
   { name: 'OPENAI_API_KEY', value: openaiApiKey }
-  { name: 'PAYPAL_CLIENT_ID', value: paypalClientId }
-  { name: 'PAYPAL_CLIENT_SECRET', value: paypalClientSecret }
+  { name: 'STRIPE_SECRET_KEY', value: stripeSecretKey }
+  { name: 'STRIPE_WEBHOOK_SECRET', value: stripeWebhookSecret }
   { name: 'CRON_SECRET', value: cronSecretValue }
   { name: 'MAKE_EXPIRY_WEBHOOK_URL', value: makeExpiryWebhookUrl }
   { name: 'MAKE_VERIFICATION_WEBHOOK_URL', value: makeVerificationWebhookUrl }
@@ -105,8 +103,6 @@ module webApp '../../modules/container-app.bicep' = if (deployApps) {
     registryPassword: useDirectCredentials ? containerRegistryAdminPassword : ''
     environmentVariables: [
       { name: 'NEXT_PUBLIC_APP_URL', value: appUrl }
-      { name: 'PAYPAL_API_BASE', value: paypalApiBase }
-      { name: 'PAYPAL_WEBHOOK_ID', value: paypalWebhookId }
       { name: 'NODE_ENV', value: 'production' }
     ]
     plainSecrets: webAppPlainSecrets

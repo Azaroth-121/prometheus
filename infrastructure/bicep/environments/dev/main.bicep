@@ -36,11 +36,9 @@ param extensionJwtSecretValue string = ''
 @secure()
 param openaiApiKey string = ''
 @secure()
-param paypalClientId string = ''
+param stripeSecretKey string = ''
 @secure()
-param paypalClientSecret string = ''
-param paypalApiBase string = 'https://api-m.paypal.com'
-param paypalWebhookId string = ''
+param stripeWebhookSecret string = ''
 @secure()
 param cronSecretValue string = ''
 @secure()
@@ -110,10 +108,8 @@ module resources 'resources.bicep' = {
     authSecretValue: authSecretValue
     extensionJwtSecretValue: extensionJwtSecretValue
     openaiApiKey: openaiApiKey
-    paypalClientId: paypalClientId
-    paypalClientSecret: paypalClientSecret
-    paypalApiBase: paypalApiBase
-    paypalWebhookId: paypalWebhookId
+    stripeSecretKey: stripeSecretKey
+    stripeWebhookSecret: stripeWebhookSecret
     cronSecretValue: cronSecretValue
     makeExpiryWebhookUrl: makeExpiryWebhookUrl
     makeVerificationWebhookUrl: makeVerificationWebhookUrl

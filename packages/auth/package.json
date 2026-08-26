@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -17,8 +18,13 @@
     "@prometheus/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^10.16.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.7",
-    "typescript": "^5.7.0"
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "pg": "^8.13.1",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }
