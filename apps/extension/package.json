@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
+    "build:store": "vite build && node scripts/strip-dev-permissions.mjs",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit"
   },

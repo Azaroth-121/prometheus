@@ -1,0 +1,53 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1220"/>
+      <stop offset="100%" stop-color="#050810"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="core" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#e8f9ff"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="52%" cy="60%" r="55%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <circle cx="66" cy="76" r="46" fill="url(#glow)"/>
+
+  <!-- Outer flame: asymmetric flicker silhouette, leaning right, concave notch on the left -->
+  <path d="M70 14
+           C 82 28 88 40 84 52
+           C 81 61 74 62 72 54
+           C 71 62 76 68 82 74
+           C 96 90 94 108 78 116
+           C 66 122 50 120 42 108
+           C 33 94 37 78 46 68
+           C 41 76 40 86 44 92
+           C 40 82 40 68 48 56
+           C 54 46 52 36 46 30
+           C 54 34 58 26 56 18
+           C 62 22 66 18 70 14
+           Z"
+        fill="url(#flame)"/>
+
+  <!-- Inner bright core, offset lower-right -->
+  <path d="M70 58
+           C 79 68 83 78 80 87
+           C 78 94 71 96 68 91
+           C 68 96 71 100 75 103
+           C 70 108 61 108 56 101
+           C 51 94 53 86 58 80
+           C 55 85 55 90 57 93
+           C 54 86 55 76 61 68
+           C 65 63 66 60 65 56
+           C 67 59 68 60 70 58
+           Z"
+        fill="url(#core)"/>
+</svg>
