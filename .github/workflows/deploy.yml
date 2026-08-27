@@ -6,10 +6,16 @@ name: Deploy
 # manual/human-gated as they are today (see deploy.ps1 and
 # packages/database/src/migrate.ts's own docstrings).
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [master]
+  # Paused: auto-trigger on CI success is disabled until the Azure OIDC
+  # service principal actually has a granted role (blocked subscription-wide
+  # on roleAssignments/write -- see the support ticket). Auto-firing on every
+  # push just produced a failure email each time. Re-enable by uncommenting
+  # the workflow_run block below once that's resolved.
+  workflow_dispatch: {}
+  # workflow_run:
+  #   workflows: ["CI"]
+  #   types: [completed]
+  #   branches: [master]
 
 permissions:
   id-token: write
@@ -24,12 +30,9 @@ env:
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: azure/login@v2
         with:
@@ -46,10 +49,10 @@ jobs:
       - name: Build and push image
         run: |
           docker build -f apps/web/Dockerfile \
-            -t ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }} \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
             -t ${{ env.IMAGE }}:latest \
             .
-          docker push ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }}
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
       - name: Update Container App
@@ -57,7 +60,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.IMAGE }}:${{ github.event.workflow_run.head_sha }}
+            --image ${{ env.IMAGE }}:${{ github.sha }}
 
       - name: Wait for health check
         run: |
