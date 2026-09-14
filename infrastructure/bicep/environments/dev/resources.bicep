@@ -101,6 +101,12 @@ module webApp '../../modules/container-app.bicep' = if (deployApps) {
     registryLoginServer: containerRegistry.outputs.loginServer
     registryUsername: useDirectCredentials ? containerRegistryAdminUsername : ''
     registryPassword: useDirectCredentials ? containerRegistryAdminPassword : ''
+    // Scaling to zero meant a cold start on the next request (~20s) -- users
+    // (and later, the Chrome Web Store review crawler checking the Homepage
+    // URL/Privacy policy link) would see this as broken or unreachable, not
+    // slow. Applied live via `az containerapp update` first; this is what
+    // keeps a future full redeploy from silently resetting it back to 0.
+    minReplicas: 1
     environmentVariables: [
       { name: 'NEXT_PUBLIC_APP_URL', value: appUrl }
       { name: 'NODE_ENV', value: 'production' }
