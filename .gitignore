@@ -40,3 +40,6 @@ pnpm-debug.log*
 
 # deploy script gets real secrets pasted into it locally -- never commit
 deploy.ps1
+
+# /brag skill output -- generated marketing video/composition, not source
+brag-output/
