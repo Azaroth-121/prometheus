@@ -238,11 +238,11 @@ describe('usage and plan access control', () => {
       expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
       expect(rejectedOnLimit).toHaveLength(attempts - planInfo.monthlyRequestLimit);
 
-      const [{ requests }] = await db
+      const [row] = await db
         .select({ requests: sql<number>`count(*)::int` })
         .from(optimizationRequests)
         .where(eq(optimizationRequests.userId, userId));
-      expect(requests).toBe(planInfo.monthlyRequestLimit);
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
     },
     20_000
   );
