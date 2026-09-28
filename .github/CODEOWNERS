@@ -1,0 +1,4 @@
+# Every PR automatically requests Azaroth-121 (Kurt, Leader) as a reviewer.
+# Paired with branch protection's "Require review from Code Owners" so no
+# merge to master can skip Leader review, matching the project guidelines.
+* @Azaroth-121
