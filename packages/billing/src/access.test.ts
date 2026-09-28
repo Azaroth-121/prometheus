@@ -2,13 +2,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '@prometheus/database';
 import { optimizationRequests, plans, profiles, subscriptions, type Database } from '@prometheus/database';
-import { checkUsageAgainstPlan, getCurrentPlanInfo } from './access';
+import { checkUsageAgainstPlan, getCurrentPlanInfo, withUserUsageLock, UsageLimitExceededError } from './access';
 
 /**
  * Real, disposable Postgres via Testcontainers rather than mocking Drizzle's
@@ -196,6 +196,56 @@ describe('usage and plan access control', () => {
     expect(info.planCode).toBe('business');
     expect(info.monthlyRequestLimit).toBe(1500);
   });
+
+  it(
+    'withUserUsageLock closes the check-then-act race: a concurrent burst never exceeds the plan limit',
+    async () => {
+      const userId = await seedUser();
+      const planInfo = await planInfoWith({ monthlyRequestLimit: 5, monthlyTokenLimit: 1_000_000 });
+      const attempts = 20;
+
+      // Without the lock, every one of these reads the same pre-insert count
+      // and all 20 would pass (that was the bug) -- with it, Postgres queues
+      // them on the same advisory key and each sees the prior ones' inserts.
+      const results = await Promise.allSettled(
+        Array.from({ length: attempts }, (_, i) =>
+          withUserUsageLock(db, userId, async (tx) => {
+            const result = await checkUsageAgainstPlan(tx, userId, planInfo);
+            if (!result.allowed) {
+              throw new UsageLimitExceededError(result);
+            }
+            await tx.insert(optimizationRequests).values({
+              userId,
+              clientRequestId: `race-${i}-${crypto.randomUUID()}`,
+              source: 'test',
+              mode: 'standard',
+              promptVersion: 'v1',
+              model: 'test-model',
+              inputCharacterCount: 10,
+              inputTokens: 10,
+              outputTokens: 0,
+            });
+            return result;
+          })
+        )
+      );
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      const rejectedOnLimit = results.filter(
+        (r) => r.status === 'rejected' && r.reason instanceof UsageLimitExceededError
+      );
+
+      expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
+      expect(rejectedOnLimit).toHaveLength(attempts - planInfo.monthlyRequestLimit);
+
+      const [row] = await db
+        .select({ requests: sql<number>`count(*)::int` })
+        .from(optimizationRequests)
+        .where(eq(optimizationRequests.userId, userId));
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
+    },
+    20_000
+  );
 
   async function planInfoWith(overrides: { monthlyRequestLimit: number; monthlyTokenLimit: number }) {
     return { ...(await getFreePlanInfoLike()), ...overrides };
