@@ -252,13 +252,18 @@ export const refreshTokens = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
+    /** Shared by a token and everything it's rotated into -- see rotateRefreshToken. */
+    familyId: uuid('family_id').notNull().default(sql`gen_random_uuid()`),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().default(sql`now()`),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokedReason: text('revoked_reason'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   },
-  (table) => [index('refresh_tokens_user_id_idx').on(table.userId)]
+  (table) => [
+    index('refresh_tokens_user_id_idx').on(table.userId),
+    index('refresh_tokens_family_id_idx').on(table.familyId),
+  ]
 );
 
 export type ProfileRow = typeof profiles.$inferSelect;
