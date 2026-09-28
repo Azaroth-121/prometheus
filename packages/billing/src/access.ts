@@ -82,8 +82,22 @@ export interface UsageCheckResult {
   remainingRequests: number;
 }
 
+/** Thrown inside `withUserUsageLock`'s callback to reject the transaction and surface why. */
+export class UsageLimitExceededError extends Error {
+  constructor(public readonly result: UsageCheckResult) {
+    super('Usage limit exceeded');
+    this.name = 'UsageLimitExceededError';
+  }
+}
+
+/** The type Drizzle hands `withUserUsageLock`'s callback -- derived from `transaction`'s own signature rather than guessed, so it can't drift from whatever Drizzle actually passes. */
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/** checkUsageAgainstPlan runs both standalone (tests, getUsageSummary) and inside withUserUsageLock's transaction. */
+type Queryable = Database | Transaction;
+
 async function getPeriodUsage(
-  db: Database,
+  db: Queryable,
   userId: string,
   periodStart: string
 ): Promise<{ requests: number; tokens: number }> {
@@ -108,7 +122,7 @@ async function getPeriodUsage(
  * maintaining a separate counter, so there's nothing to keep in sync.
  */
 export async function checkUsageAgainstPlan(
-  db: Database,
+  db: Queryable,
   userId: string,
   planInfo: CurrentPlanInfo
 ): Promise<UsageCheckResult> {
@@ -146,4 +160,31 @@ export async function getUsageSummary(db: Database, userId: string): Promise<Usa
     tokens_used: usage.tokens,
     tokens_limit: planInfo.monthlyTokenLimit,
   };
+}
+
+/**
+ * Closes the check-then-act race in checkUsageAgainstPlan: without this, two
+ * concurrent /api/v1/optimize calls from the same user both read the same
+ * pre-insert usage count and both pass, so a Free-tier user firing a burst
+ * of parallel requests can blow past their request/token cap at real OpenAI
+ * cost. `pg_advisory_xact_lock` serializes calls per-user (different users
+ * hash to different lock keys via `hashtext`, so this never contends across
+ * users) and auto-releases at transaction end -- no separate unlock call,
+ * no lock left held on a crash.
+ *
+ * `fn` receives the transaction and is expected to both call
+ * `checkUsageAgainstPlan` (passing that same transaction, not `db`) and, if
+ * allowed, perform whatever write is meant to "spend" the quota -- both
+ * inside the lock, so nothing else can slip in between the check and the
+ * spend. Throw `UsageLimitExceededError` from `fn` to reject and roll back.
+ */
+export async function withUserUsageLock<T>(
+  db: Database,
+  userId: string,
+  fn: (tx: Transaction) => Promise<T>
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId})::bigint)`);
+    return fn(tx);
+  });
 }
