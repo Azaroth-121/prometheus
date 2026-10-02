@@ -22,7 +22,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-16">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-12">
       <div className="flex items-center justify-between border-b border-line pb-4">
         <h1 className="font-display text-2xl font-semibold text-ink">Admin</h1>
         <nav className="flex gap-4 text-sm">
