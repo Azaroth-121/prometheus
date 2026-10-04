@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
+import type { OptimizationMode, OptimizeSuccessResponse, OrgSummary, UsageSummary } from '@prometheus/shared-types';
 import { isOptimizeError, OPTIMIZATION_MODES } from '@prometheus/shared-types';
-import { getUsage, optimize, submitOutcome } from '../lib/api';
+import { getOrgs, getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
-import { Button, Glow, Input, Panel, SegmentedControl, TextArea } from './ui';
+import { Button, Glow, Input, OrgBadge, Panel, SegmentedControl, TextArea } from './ui';
 
 // Mirrors packages/billing/src/plans.ts — placeholder pricing. Real
 // recurring monthly subscriptions via Stripe Checkout.
@@ -49,6 +49,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [tab, setTab] = useState<Tab>('optimize');
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [activeOrg, setActiveOrg] = useState<OrgSummary | null>(null);
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<OptimizationMode>('standard');
@@ -63,6 +64,15 @@ export default function App() {
       setUserEmail(session?.email ?? null);
     });
   }, []);
+
+  // Org UI is server-flagged (FEATURE_ORGS): getOrgs() returns null while it's
+  // off, and the popup simply renders no org badge.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    getOrgs().then((result) => {
+      setActiveOrg(result?.orgs.find((org) => org.id === result.active_org_id) ?? null);
+    });
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (tab !== 'settings' || !isSignedIn) return;
@@ -89,6 +99,7 @@ export default function App() {
     await signOut();
     setIsSignedIn(false);
     setUserEmail(null);
+    setActiveOrg(null);
     setResult(null);
     setError(null);
     setTab('optimize');
@@ -152,6 +163,7 @@ export default function App() {
         >
           Prometheus
         </h1>
+        {isSignedIn && activeOrg && <OrgBadge org={activeOrg} className="ml-auto" />}
       </div>
 
       {isSignedIn === false && (
