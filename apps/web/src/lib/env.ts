@@ -42,4 +42,10 @@ export const env = {
   get makeVerificationWebhookUrl() {
     return required('MAKE_VERIFICATION_WEBHOOK_URL', process.env.MAKE_VERIFICATION_WEBHOOK_URL);
   },
+  /** Phase E0 org UI (org switcher etc.). Optional and off unless explicitly
+   * "true" -- org features land on master behind this flag until the E0 exit
+   * gate, so production never shows half-built org UI. */
+  get featureOrgs() {
+    return process.env.FEATURE_ORGS === 'true';
+  },
 };

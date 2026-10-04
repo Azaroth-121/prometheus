@@ -3,3 +3,4 @@ export * from './session';
 export * from './require-role';
 export * from './profile-mapper';
 export * from './tokens';
+export * from './org';
