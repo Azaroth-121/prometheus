@@ -18,7 +18,7 @@ const PLAN_OPTIONS: PlanOption[] = [
   { code: 'enterprise', name: 'Enterprise', price: 100, requestLimit: 5000 },
 ];
 
-export function PlanCards() {
+export function PlanCards({ disabled = false }: { disabled?: boolean }) {
   const [loadingCode, setLoadingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,7 +58,7 @@ export function PlanCards() {
             <p className="text-sm text-ink-muted">
               {plan.requestLimit.toLocaleString()} optimizations / month
             </p>
-            <Button onClick={() => handlePay(plan.code)} disabled={loadingCode !== null}>
+            <Button onClick={() => handlePay(plan.code)} disabled={disabled || loadingCode !== null}>
               {loadingCode === plan.code ? 'Redirecting…' : `Subscribe to ${plan.name}`}
             </Button>
           </Card>

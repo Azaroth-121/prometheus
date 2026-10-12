@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import type Stripe from 'stripe';
-import { plans, subscriptions, webhookEvents } from '@prometheus/database';
+import { adminAuditLogs, organizationSubscriptions, plans, profiles, subscriptions, webhookEvents } from '@prometheus/database';
 import { constructWebhookEvent, createStripeClient } from '@prometheus/billing';
 import type { SubscriptionStatus } from '@prometheus/shared-types';
 import { db } from '@/lib/db';
@@ -74,6 +74,10 @@ export async function POST(request: NextRequest) {
             .update(subscriptions)
             .set({ status: 'past_due', updatedAt: new Date() })
             .where(eq(subscriptions.providerSubscriptionId, invoice.subscription));
+          await db
+            .update(organizationSubscriptions)
+            .set({ status: 'past_due', updatedAt: new Date() })
+            .where(eq(organizationSubscriptions.providerSubscriptionId, invoice.subscription));
         }
         break;
       }
@@ -109,6 +113,52 @@ async function upsertSubscriptionFromStripe(sub: Stripe.Subscription): Promise<v
   if (!plan) return;
 
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
+
+  if (sub.metadata.organizationId) {
+    await db
+      .insert(organizationSubscriptions)
+      .values({
+        organizationId: sub.metadata.organizationId,
+        provider: 'stripe',
+        providerCustomerId: customerId,
+        providerSubscriptionId: sub.id,
+        planId: plan.id,
+        status: sub.status as SubscriptionStatus,
+        currentPeriodStart: new Date(sub.current_period_start * 1000),
+        currentPeriodEnd: new Date(sub.current_period_end * 1000),
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+      })
+      .onConflictDoUpdate({
+        target: organizationSubscriptions.providerSubscriptionId,
+        set: {
+          planId: plan.id,
+          status: sub.status as SubscriptionStatus,
+          currentPeriodStart: new Date(sub.current_period_start * 1000),
+          currentPeriodEnd: new Date(sub.current_period_end * 1000),
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          updatedAt: new Date(),
+        },
+      });
+    if (sub.metadata.userId) {
+      const [actor] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.id, sub.metadata.userId)).limit(1);
+      if (actor) {
+        await db.insert(adminAuditLogs).values({
+          adminUserId: actor.id,
+          organizationId: sub.metadata.organizationId,
+          action: 'sync_organization_subscription',
+          targetType: 'organization_subscription',
+          targetId: sub.id,
+          afterState: {
+            planId: plan.id,
+            status: sub.status,
+            currentPeriodEnd: new Date(sub.current_period_end * 1000).toISOString(),
+            cancelAtPeriodEnd: sub.cancel_at_period_end,
+          },
+        });
+      }
+    }
+    return;
+  }
 
   await db
     .insert(subscriptions)

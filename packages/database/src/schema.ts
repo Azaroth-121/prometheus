@@ -9,6 +9,7 @@ import {
   jsonb,
   inet,
   unique,
+  uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -40,7 +41,75 @@ export const profiles = pgTable('profiles', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  activeOrganizationId: uuid('active_organization_id'),
 });
+
+// ---------------------------------------------------------------------------
+// organizations and memberships
+// ---------------------------------------------------------------------------
+export const organizations = pgTable(
+  'organizations',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    slug: text('slug').notNull().unique(),
+    status: text('status', { enum: ['active', 'suspended'] }).notNull().default('active'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => profiles.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (table) => [index('organizations_created_by_idx').on(table.createdBy)]
+);
+
+export const organizationMembers = pgTable(
+  'organization_members',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['owner', 'admin', 'member', 'billing'] }).notNull().default('member'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (table) => [
+    unique('organization_members_organization_user_key').on(table.organizationId, table.userId),
+    uniqueIndex('organization_members_single_owner_key')
+      .on(table.organizationId)
+      .where(sql`${table.role} = 'owner'`),
+    index('organization_members_user_id_idx').on(table.userId),
+  ]
+);
+
+export const organizationInvitations = pgTable(
+  'organization_invitations',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: text('role', { enum: ['admin', 'member', 'billing'] }).notNull().default('member'),
+    tokenHash: text('token_hash').notNull().unique(),
+    invitedBy: uuid('invited_by')
+      .notNull()
+      .references(() => profiles.id),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedBy: uuid('accepted_by').references(() => profiles.id),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (table) => [
+    index('organization_invitations_organization_id_idx').on(table.organizationId),
+    index('organization_invitations_email_idx').on(table.email),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // plans
@@ -97,6 +166,30 @@ export const subscriptions = pgTable(
   (table) => [index('subscriptions_user_id_idx').on(table.userId)]
 );
 
+export const organizationSubscriptions = pgTable(
+  'organization_subscriptions',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    provider: text('provider', { enum: ['stripe'] }).notNull().default('stripe'),
+    providerCustomerId: text('provider_customer_id').notNull(),
+    providerSubscriptionId: text('provider_subscription_id').notNull().unique(),
+    planId: uuid('plan_id').notNull().references(() => plans.id),
+    status: text('status', {
+      enum: ['active', 'trialing', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'unpaid'],
+    }).notNull(),
+    currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (table) => [index('organization_subscriptions_organization_id_idx').on(table.organizationId)]
+);
+
 // ---------------------------------------------------------------------------
 // optimization_requests
 //
@@ -110,6 +203,7 @@ export const optimizationRequests = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
+    organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
     clientRequestId: text('client_request_id').notNull(),
     source: text('source').notNull(),
     mode: text('mode').notNull(),
@@ -131,6 +225,7 @@ export const optimizationRequests = pgTable(
   },
   (table) => [
     index('optimization_requests_user_id_idx').on(table.userId),
+    index('optimization_requests_organization_id_idx').on(table.organizationId),
     unique('optimization_requests_user_id_client_request_id_key').on(table.userId, table.clientRequestId),
   ]
 );
@@ -188,6 +283,7 @@ export const adminAuditLogs = pgTable('admin_audit_logs', {
   adminUserId: uuid('admin_user_id')
     .notNull()
     .references(() => profiles.id),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   action: text('action').notNull(),
   targetType: text('target_type').notNull(),
   targetId: text('target_id').notNull(),
@@ -275,3 +371,9 @@ export type SystemEventRow = typeof systemEvents.$inferSelect;
 export type WebhookEventRow = typeof webhookEvents.$inferSelect;
 export type RefreshTokenRow = typeof refreshTokens.$inferSelect;
 export type NewRefreshTokenRow = typeof refreshTokens.$inferInsert;
+export type OrganizationRow = typeof organizations.$inferSelect;
+export type NewOrganizationRow = typeof organizations.$inferInsert;
+export type OrganizationMemberRow = typeof organizationMembers.$inferSelect;
+export type NewOrganizationMemberRow = typeof organizationMembers.$inferInsert;
+export type OrganizationInvitationRow = typeof organizationInvitations.$inferSelect;
+export type OrganizationSubscriptionRow = typeof organizationSubscriptions.$inferSelect;
