@@ -1,0 +1,124 @@
+name: PR Collision Scan
+
+# Scans this PR against every other currently-open PR (and against master)
+# for two specific, concrete collision types -- file overlap and migration
+# number clashes -- and reports them in the workflow run's job summary so
+# the team can discuss and resolve before merge. Deliberately non-blocking
+# (see the note at the bottom of the script): this surfaces conflicts for
+# humans to reconcile, it doesn't decide who's right.
+#
+# Strictly read-only with respect to every PR it scans: it never comments,
+# labels, pushes, or otherwise writes to a PR or its branch -- only reads
+# diffs via the API and writes its report to this run's own job summary.
+# permissions is `pull-requests: read` accordingly, not `write`.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scan:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan for collisions with other open PRs and master
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+
+          # Files this PR touches are not a conflict signal by themselves --
+          # pnpm-lock.yaml is touched by nearly every PR and almost never
+          # worth a human reconciling by hand (regenerating it resolves it).
+          NOISE_PATTERN='^pnpm-lock\.yaml$'
+
+          gh pr diff "$PR_NUMBER" --repo "$REPO" --name-only > this_pr_files.txt
+          grep -vE "$NOISE_PATTERN" this_pr_files.txt > this_pr_files.filtered.txt || true
+
+          MIGRATION_PATTERN='^packages/database/drizzle/[0-9]+_.*\.sql$'
+          grep -E "$MIGRATION_PATTERN" this_pr_files.txt > this_pr_migrations.txt || true
+
+          REPORT="report.md"
+          { echo "## 🔍 PR Collision Scan"; echo; } > "$REPORT"
+
+          FOUND_ISSUE=0
+
+          # --- Migration number already taken on master? ---
+          gh api "repos/$REPO/contents/packages/database/drizzle?ref=master" \
+            --jq '.[].name' > master_migrations.txt 2>/dev/null || touch master_migrations.txt
+
+          if [ -s this_pr_migrations.txt ]; then
+            echo "### Migration numbers vs master" >> "$REPORT"
+            while read -r f; do
+              name=$(basename "$f")
+              num=$(echo "$name" | grep -oE '^[0-9]+')
+              existing=$(grep -E "^${num}_" master_migrations.txt || true)
+              if [ -n "$existing" ] && [ "$existing" != "$name" ]; then
+                echo "- ⚠️ **Collision with \`master\`:** this PR adds \`$name\`, but migration number \`$num\` already exists on \`master\` as \`$existing\`. Renumber one of them." >> "$REPORT"
+                FOUND_ISSUE=1
+              fi
+            done < this_pr_migrations.txt
+            echo >> "$REPORT"
+          fi
+
+          # --- Compare against every other OPEN PR ---
+          echo "### Overlap with other open PRs" >> "$REPORT"
+          OTHER_PRS=$(gh pr list --repo "$REPO" --state open --json number --jq ".[] | select(.number != $PR_NUMBER) | .number")
+
+          ANY_OVERLAP=0
+          for other in $OTHER_PRS; do
+            gh pr diff "$other" --repo "$REPO" --name-only > "other_${other}_files.txt" || continue
+            grep -vE "$NOISE_PATTERN" "other_${other}_files.txt" > "other_${other}_files.filtered.txt" || true
+
+            OVERLAP=$(comm -12 <(sort this_pr_files.filtered.txt) <(sort "other_${other}_files.filtered.txt") || true)
+            if [ -n "$OVERLAP" ]; then
+              echo "- ⚠️ **File overlap with #$other:**" >> "$REPORT"
+              while read -r of; do echo "  - \`$of\`" >> "$REPORT"; done <<< "$OVERLAP"
+              ANY_OVERLAP=1
+              FOUND_ISSUE=1
+            fi
+
+            if [ -s this_pr_migrations.txt ]; then
+              grep -E "$MIGRATION_PATTERN" "other_${other}_files.txt" > "other_${other}_migrations.txt" || true
+              if [ -s "other_${other}_migrations.txt" ]; then
+                while read -r f; do
+                  num=$(basename "$f" | grep -oE '^[0-9]+')
+                  while read -r f2; do
+                    num2=$(basename "$f2" | grep -oE '^[0-9]+')
+                    if [ "$num" = "$num2" ] && [ "$(basename "$f")" != "$(basename "$f2")" ]; then
+                      echo "- 🔢 **Migration number collision with #$other:** both claim \`$num\` (\`$(basename "$f")\` here vs \`$(basename "$f2")\` there). Whichever merges second must renumber." >> "$REPORT"
+                      FOUND_ISSUE=1
+                    fi
+                  done < "other_${other}_migrations.txt"
+                done < this_pr_migrations.txt
+              fi
+            fi
+          done
+
+          if [ "$ANY_OVERLAP" -eq 0 ]; then
+            echo "- None detected." >> "$REPORT"
+          fi
+
+          if [ "$FOUND_ISSUE" -eq 0 ]; then
+            { echo; echo "✅ No collisions detected against master or other open PRs."; } >> "$REPORT"
+          fi
+
+          # Report lands ONLY in this run's job summary (Actions tab -> this
+          # workflow run -> Summary). Nothing is written back to the PR
+          # itself -- no comment, no label, no status beyond this check's own
+          # pass/fail. The team reads it there and discusses in the PR by
+          # hand.
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+          # Deliberately exit 0 regardless of findings: this is a discussion
+          # prompt for the team, not a merge gate. Make it a required status
+          # check later if the team decides false positives are rare enough
+          # to block on.
+          exit 0
