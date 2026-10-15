@@ -1,0 +1,82 @@
+name: Security Scanning
+
+# Two independent checks, both informational for now (see the non-blocking
+# notes on each job) -- surfacing findings for the team to triage, same
+# philosophy as the PR collision scanner. Either can be made a required
+# check later once false-positive rates are known.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Weekly, off-minute on purpose -- catches newly-disclosed CVEs in
+    # dependencies even on weeks with no PRs open.
+    - cron: '17 6 * * 3'
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    # CodeQL's own write need, scoped to just this job -- uploading SARIF
+    # results to the repo's Security tab requires security-events: write.
+    # Free for this repo since it's public; would need GitHub Advanced
+    # Security if it were private.
+    permissions:
+      contents: read
+      security-events: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: |
+          set +e
+          pnpm audit --audit-level=high > audit_output.txt 2>&1
+          STATUS=$?
+          set -e
+
+          {
+            echo "## 📦 Dependency Audit (pnpm audit --audit-level=high)"
+            echo
+            if [ "$STATUS" -eq 0 ]; then
+              echo "✅ No high/critical advisories found."
+            else
+              echo "⚠️ Found advisories at high severity or above -- see below. **Informational only, not blocking** until the team decides on a severity threshold worth gating merges on."
+              echo
+              echo '```'
+              cat audit_output.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Deliberately exit 0 regardless of findings, same reasoning as
+          # the PR collision scanner: this starts a conversation, it
+          # doesn't block one.
+          exit 0
