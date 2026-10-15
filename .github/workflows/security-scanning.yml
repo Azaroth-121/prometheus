@@ -22,10 +22,14 @@ jobs:
     # CodeQL's own write need, scoped to just this job -- uploading SARIF
     # results to the repo's Security tab requires security-events: write.
     # Free for this repo since it's public; would need GitHub Advanced
-    # Security if it were private.
+    # Security if it were private. actions: read is also required -- the
+    # action looks up this workflow run's own metadata as part of the
+    # upload; without it the analyze step completes the scan but then
+    # fails on that lookup before the SARIF upload goes through.
     permissions:
       contents: read
       security-events: write
+      actions: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
