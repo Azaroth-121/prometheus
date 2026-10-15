@@ -1,11 +1,12 @@
 name: PR Collision Scan
 
 # Scans this PR against every other currently-open PR (and against master)
-# for two specific, concrete collision types -- file overlap and migration
-# number clashes -- and reports them in the workflow run's job summary so
-# the team can discuss and resolve before merge. Deliberately non-blocking
-# (see the note at the bottom of the script): this surfaces conflicts for
-# humans to reconcile, it doesn't decide who's right.
+# for three specific, concrete issues -- file overlap, migration numbers
+# that collide, and migration numbers that leave a gap nothing else fills
+# -- and reports them in the workflow run's job summary so the team can
+# discuss and resolve before merge. Deliberately non-blocking (see the
+# note at the bottom of the script): this surfaces conflicts for humans
+# to reconcile, it doesn't decide who's right.
 #
 # Strictly read-only with respect to every PR it scans: it never comments,
 # labels, pushes, or otherwise writes to a PR or its branch -- only reads
@@ -45,6 +46,15 @@ jobs:
           MIGRATION_PATTERN='^packages/database/drizzle/[0-9]+_.*\.sql$'
           grep -E "$MIGRATION_PATTERN" this_pr_files.txt > this_pr_migrations.txt || true
 
+          # Decimal migration number from a filename like "0005_foo.sql" --
+          # `10#` forces base-10 so a leading zero never gets read as octal.
+          num_of() { echo $((10#$(basename "$1" | grep -oE '^[0-9]+'))); }
+
+          # Every migration number anyone currently claims -- master plus
+          # every open PR plus this one -- feeds the gap check below: a
+          # number only looks like a gap if NOTHING in flight fills it.
+          : > all_migration_numbers.txt
+
           REPORT="report.md"
           { echo "## 🔍 PR Collision Scan"; echo; } > "$REPORT"
 
@@ -53,6 +63,14 @@ jobs:
           # --- Migration number already taken on master? ---
           gh api "repos/$REPO/contents/packages/database/drizzle?ref=master" \
             --jq '.[].name' > master_migrations.txt 2>/dev/null || touch master_migrations.txt
+
+          MAX_MASTER=0
+          while read -r name; do
+            [ -n "$name" ] || continue
+            n=$(num_of "$name")
+            echo "$n" >> all_migration_numbers.txt
+            [ "$n" -gt "$MAX_MASTER" ] && MAX_MASTER=$n
+          done < master_migrations.txt
 
           if [ -s this_pr_migrations.txt ]; then
             echo "### Migration numbers vs master" >> "$REPORT"
@@ -67,6 +85,8 @@ jobs:
             done < this_pr_migrations.txt
             echo >> "$REPORT"
           fi
+
+          while read -r f; do num_of "$f" >> all_migration_numbers.txt; done < this_pr_migrations.txt
 
           # --- Compare against every other OPEN PR ---
           echo "### Overlap with other open PRs" >> "$REPORT"
@@ -85,9 +105,11 @@ jobs:
               FOUND_ISSUE=1
             fi
 
-            if [ -s this_pr_migrations.txt ]; then
-              grep -E "$MIGRATION_PATTERN" "other_${other}_files.txt" > "other_${other}_migrations.txt" || true
-              if [ -s "other_${other}_migrations.txt" ]; then
+            grep -E "$MIGRATION_PATTERN" "other_${other}_files.txt" > "other_${other}_migrations.txt" || true
+            if [ -s "other_${other}_migrations.txt" ]; then
+              while read -r f2; do num_of "$f2" >> all_migration_numbers.txt; done < "other_${other}_migrations.txt"
+
+              if [ -s this_pr_migrations.txt ]; then
                 while read -r f; do
                   num=$(basename "$f" | grep -oE '^[0-9]+')
                   while read -r f2; do
@@ -101,6 +123,33 @@ jobs:
               fi
             fi
           done
+
+          # --- Does this PR's migration number leave a gap? ---
+          # A number only counts as filled if SOMETHING currently claims it
+          # -- master, this PR, or any other open PR. Catches e.g. this PR
+          # adding 0009 while 0006 isn't claimed by anything in flight,
+          # which the plain collision checks above wouldn't catch (0009
+          # doesn't collide with anything -- it's just wrong).
+          if [ -s this_pr_migrations.txt ]; then
+            while read -r f; do
+              n=$(num_of "$f")
+              name=$(basename "$f")
+              if [ "$n" -gt $((MAX_MASTER + 1)) ]; then
+                gap=""
+                check=$((MAX_MASTER + 1))
+                while [ "$check" -lt "$n" ]; do
+                  if ! grep -qx "$check" all_migration_numbers.txt; then
+                    gap="$gap $check"
+                  fi
+                  check=$((check + 1))
+                done
+                if [ -n "$gap" ]; then
+                  echo "- 🕳️ **Numbering gap:** \`$name\` jumps ahead of master's highest (\`$MAX_MASTER\`) without anything in flight claiming:$gap. Double check nothing was meant to land first." >> "$REPORT"
+                  FOUND_ISSUE=1
+                fi
+              fi
+            done < this_pr_migrations.txt
+          fi
 
           if [ "$ANY_OVERLAP" -eq 0 ]; then
             echo "- None detected." >> "$REPORT"
