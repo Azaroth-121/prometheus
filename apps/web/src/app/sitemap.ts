@@ -1,11 +1,11 @@
 import type { MetadataRoute } from 'next';
-import { env } from '@/lib/env';
+import { SITE_URL } from '@/lib/site';
 
 // Only unauthenticated, publicly-linkable pages -- /dashboard, /admin, and
 // account-flow pages (verify-email, etc.) require a session or a one-time
 // token and have nothing for a crawler to index.
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = env.appUrl.replace(/\/$/, '');
+  const base = SITE_URL;
   const now = new Date();
 
   return [

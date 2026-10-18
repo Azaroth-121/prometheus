@@ -1,8 +1,8 @@
 import type { MetadataRoute } from 'next';
-import { env } from '@/lib/env';
+import { SITE_URL } from '@/lib/site';
 
 export default function robots(): MetadataRoute.Robots {
-  const base = env.appUrl.replace(/\/$/, '');
+  const base = SITE_URL;
 
   return {
     rules: {
