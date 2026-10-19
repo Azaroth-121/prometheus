@@ -9,7 +9,11 @@ import { db } from '@/lib/db';
 const NAV_LINKS = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/users', label: 'Users' },
+  { href: '/admin/organizations', label: 'Organizations' },
+  { href: '/admin/members', label: 'Members' },
+  { href: '/admin/usage', label: 'Usage & Billing' },
   { href: '/admin/requests', label: 'Requests' },
+  { href: '/admin/audit', label: 'Audit' },
   { href: '/admin/prompt-configs', label: 'Prompt Configs' },
 ];
 
@@ -22,10 +26,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-16">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-16">
       <div className="flex items-center justify-between border-b border-line pb-4">
         <h1 className="font-display text-2xl font-semibold text-ink">Admin</h1>
-        <nav className="flex gap-4 text-sm">
+        <nav className="flex flex-wrap justify-end gap-4 text-sm">
           {NAV_LINKS.map((link) => (
             <Link key={link.href} href={link.href} className="text-ink-muted hover:text-glow-cyan">
               {link.label}

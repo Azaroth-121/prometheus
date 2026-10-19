@@ -20,6 +20,8 @@ export interface CreateCheckoutSessionInput {
   customerEmail: string;
   /** Stamped onto the resulting Subscription's metadata -- the webhook has no other way to attribute a brand-new customer's first subscription to a profile. */
   userId: string;
+  /** Present when this subscription belongs to an organization rather than the individual. */
+  organizationId?: string | null;
   priceId: string;
   successUrl: string;
   cancelUrl: string;
@@ -34,7 +36,11 @@ export async function createCheckoutSession(
     line_items: [{ price: input.priceId, quantity: 1 }],
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-    subscription_data: { metadata: { userId: input.userId } },
+    subscription_data: {
+      metadata: input.organizationId
+        ? { userId: input.userId, organizationId: input.organizationId, billingScope: 'organization' }
+        : { userId: input.userId, billingScope: 'individual' },
+    },
     ...(input.customerId ? { customer: input.customerId } : { customer_email: input.customerEmail }),
   });
 }
