@@ -1,7 +1,8 @@
 import { sql, gte } from 'drizzle-orm';
-import { profiles, optimizationRequests } from '@prometheus/database';
+import { organizations, profiles, optimizationRequests } from '@prometheus/database';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
+import { requirePlatformAdmin } from '@/lib/admin';
 
 function startOfToday(): Date {
   const start = new Date();
@@ -19,12 +20,12 @@ function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export default async function AdminOverviewPage() {
-  // Gated by admin/layout.tsx (requireAdmin-equivalent) -- no RLS backstop
-  // anymore, so that layout check is the only thing standing between this
-  // page and every user's data. See known-technical-debt-style note: worth
-  // a dedicated test confirming a non-admin can't reach this route.
+  await requirePlatformAdmin();
+  // Guarded here as well as in the shared layout: the database connection has
+  // no RLS backstop, so each data-loading server component fails closed.
   const [userCountRow] = await db.select({ totalUsers: sql<number>`count(*)::int` }).from(profiles);
   const totalUsers = userCountRow?.totalUsers ?? 0;
+  const [organizationCountRow] = await db.select({ totalOrganizations: sql<number>`count(*)::int` }).from(organizations);
 
   const todaysRequests = await db
     .select({ status: optimizationRequests.status, errorCode: optimizationRequests.errorCode })
@@ -41,8 +42,9 @@ export default async function AdminOverviewPage() {
   const guardrailFailureRate = requestsToday === 0 ? 0 : (guardrailFailedToday / requestsToday) * 100;
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
       <StatCard label="Total users" value={String(totalUsers ?? 0)} />
+      <StatCard label="Organizations" value={String(organizationCountRow?.totalOrganizations ?? 0)} />
       <StatCard label="Requests today" value={String(requestsToday)} />
       <StatCard label="Error rate today" value={`${errorRate.toFixed(1)}%`} />
       <StatCard label="Guardrail failure rate today" value={`${guardrailFailureRate.toFixed(1)}%`} />

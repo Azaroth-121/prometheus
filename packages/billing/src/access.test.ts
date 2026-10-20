@@ -2,12 +2,21 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '@prometheus/database';
-import { optimizationRequests, plans, profiles, subscriptions, type Database } from '@prometheus/database';
+import {
+  organizationMembers,
+  organizations,
+  organizationSubscriptions,
+  optimizationRequests,
+  plans,
+  profiles,
+  subscriptions,
+  type Database,
+} from '@prometheus/database';
 import { checkUsageAgainstPlan, getCurrentPlanInfo } from './access';
 
 /**
@@ -79,6 +88,19 @@ describe('usage and plan access control', () => {
       })
       .returning();
     return plan!;
+  }
+
+  async function seedOrganization(ownerId: string, memberIds: string[] = []) {
+    const [organization] = await db
+      .insert(organizations)
+      .values({ name: 'Test Org', slug: `test-${crypto.randomUUID()}`, createdBy: ownerId })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: organization!.id, userId: ownerId, role: 'owner' },
+      ...memberIds.map((userId) => ({ organizationId: organization!.id, userId, role: 'member' as const })),
+    ]);
+    await db.update(profiles).set({ activeOrganizationId: organization!.id }).where(eq(profiles.id, ownerId));
+    return organization!;
   }
 
   async function seedRequest(userId: string, tokens: number) {
@@ -197,6 +219,76 @@ describe('usage and plan access control', () => {
     expect(info.monthlyRequestLimit).toBe(1500);
   });
 
+  it('counts every member request against the active organization shared allowance', async () => {
+    const ownerId = await seedUser();
+    const memberId = await seedUser();
+    await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 20, monthlyTokenLimit: 50_000 });
+    const organization = await seedOrganization(ownerId, [memberId]);
+    await db.insert(optimizationRequests).values({
+      userId: memberId,
+      organizationId: organization.id,
+      clientRequestId: crypto.randomUUID(),
+      source: 'test',
+      mode: 'standard',
+      promptVersion: 'v1',
+      model: 'test-model',
+      inputCharacterCount: 10,
+      inputTokens: 75,
+      outputTokens: 25,
+    });
+
+    const planInfo = await getCurrentPlanInfo(db, ownerId);
+    const result = await checkUsageAgainstPlan(db, ownerId, planInfo);
+
+    expect(planInfo.type).toBe('organization');
+    expect(planInfo.organizationId).toBe(organization.id);
+    expect(result.remainingRequests).toBe(19);
+  });
+
+  it('uses the active organization subscription instead of the owner individual subscription', async () => {
+    const ownerId = await seedUser();
+    const organization = await seedOrganization(ownerId);
+    const organizationPlan = await seedPlan({ code: 'org-business', name: 'Org Business' });
+    await db.insert(organizationSubscriptions).values({
+      organizationId: organization.id,
+      providerCustomerId: 'org-customer',
+      providerSubscriptionId: `sub-${crypto.randomUUID()}`,
+      planId: organizationPlan.id,
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+    });
+
+    const info = await getCurrentPlanInfo(db, ownerId);
+
+    expect(info.planName).toBe('Org Business');
+    expect(info.type).toBe('organization');
+  });
+
+  it('does not count organization requests against an individual allowance', async () => {
+    const userId = await seedUser();
+    const organization = await seedOrganization(userId);
+    await db.insert(optimizationRequests).values({
+      userId,
+      organizationId: organization.id,
+      clientRequestId: crypto.randomUUID(),
+      source: 'test',
+      mode: 'standard',
+      promptVersion: 'v1',
+      model: 'test-model',
+      inputCharacterCount: 10,
+      inputTokens: 10,
+      outputTokens: 0,
+    });
+    await db.update(profiles).set({ activeOrganizationId: null }).where(eq(profiles.id, userId));
+
+    const info = await getCurrentPlanInfo(db, userId);
+    const result = await checkUsageAgainstPlan(db, userId, info);
+
+    expect(info.type).toBe('individual');
+    expect(result.remainingRequests).toBe(info.monthlyRequestLimit);
+  });
+
   async function planInfoWith(overrides: { monthlyRequestLimit: number; monthlyTokenLimit: number }) {
     return { ...(await getFreePlanInfoLike()), ...overrides };
   }
@@ -210,6 +302,9 @@ describe('usage and plan access control', () => {
       monthlyTokenLimit: 50_000,
       maximumInputLength: 2000,
       periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      type: 'individual' as const,
+      organizationId: null,
+      organizationName: null,
     };
   }
 });
