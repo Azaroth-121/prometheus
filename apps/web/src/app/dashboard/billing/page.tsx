@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth';
-import { getCurrentProfile } from '@prometheus/auth';
+import { getActiveOrganization, getCurrentProfile } from '@prometheus/auth';
 import { getCurrentPlanInfo } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
@@ -11,12 +11,16 @@ export default async function BillingPage() {
   const session = await auth();
   const profile = session?.user?.id ? await getCurrentProfile(db, session.user.id) : null;
   const plan = profile ? await getCurrentPlanInfo(db, profile.id) : null;
+  const activeOrganization = profile ? await getActiveOrganization(db, profile.id) : null;
+  const canManageBilling = !activeOrganization || activeOrganization.role === 'owner' || activeOrganization.role === 'billing';
   const isPaidPlan = plan?.planCode !== 'free';
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold text-ink">Upgrade Prometheus</h1>
+        <h1 className="font-display text-2xl font-semibold text-ink">
+          {activeOrganization ? `${activeOrganization.name} billing` : 'Upgrade Prometheus'}
+        </h1>
         <p className="text-ink-muted">
           Paid plans auto-renew monthly. Cancel or change plans anytime from Manage billing.
         </p>
@@ -29,10 +33,11 @@ export default async function BillingPage() {
             Renews {new Date(plan.expiresAt).toLocaleDateString()}
           </p>
         )}
-        {isPaidPlan && <ManageBillingButton />}
+        {isPaidPlan && canManageBilling && <ManageBillingButton />}
+        {!canManageBilling && <p className="text-sm text-ink-muted">Only the organization owner or billing manager can change this plan.</p>}
       </Card>
       {profile && <UsageCard userId={profile.id} />}
-      <PlanCards />
+      <PlanCards disabled={!canManageBilling} />
     </div>
   );
 }

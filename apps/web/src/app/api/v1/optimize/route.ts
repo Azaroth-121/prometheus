@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
     await db.insert(optimizationRequests).values({
       id: requestId,
       userId: profile.id,
+      organizationId: planInfo.organizationId,
       clientRequestId: body.client_request_id,
       source: body.source,
       mode: body.mode,

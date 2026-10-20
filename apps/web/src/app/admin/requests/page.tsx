@@ -1,7 +1,8 @@
 import { desc, eq } from 'drizzle-orm';
-import { optimizationRequests } from '@prometheus/database';
+import { optimizationRequests, organizations } from '@prometheus/database';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
+import { requirePlatformAdmin } from '@/lib/admin';
 
 export default async function AdminRequestsPage({
   searchParams,
@@ -9,11 +10,13 @@ export default async function AdminRequestsPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status } = await searchParams;
+  await requirePlatformAdmin();
 
   const requests = await db
     .select({
       id: optimizationRequests.id,
       userId: optimizationRequests.userId,
+      organizationName: organizations.name,
       source: optimizationRequests.source,
       mode: optimizationRequests.mode,
       promptVersion: optimizationRequests.promptVersion,
@@ -25,6 +28,7 @@ export default async function AdminRequestsPage({
       completedAt: optimizationRequests.completedAt,
     })
     .from(optimizationRequests)
+    .leftJoin(organizations, eq(organizations.id, optimizationRequests.organizationId))
     .where(
       status === 'pending' || status === 'succeeded' || status === 'failed'
         ? eq(optimizationRequests.status, status)
@@ -63,6 +67,7 @@ export default async function AdminRequestsPage({
                 {r.createdAt.toLocaleString()}
                 {r.latencyMs != null ? ` · ${r.latencyMs}ms` : ''}
                 {` · ${r.promptVersion}`}
+                {r.organizationName ? ` · ${r.organizationName}` : ' · Individual'}
               </p>
             </div>
             <div className="text-right">
