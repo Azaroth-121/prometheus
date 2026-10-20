@@ -16,7 +16,14 @@ export async function UsageCard({ userId }: { userId: string }) {
 
   return (
     <Card className="flex flex-col gap-3">
-      <p className="text-ink-muted">Usage this period</p>
+      <div>
+        <p className="text-ink-muted">Usage this period</p>
+        <p className="text-sm text-ink">
+          {usage.billing_scope === 'organization'
+            ? `${usage.organization_name} shared allowance`
+            : 'Your individual allowance'}
+        </p>
+      </div>
       <div className="flex flex-col gap-1">
         <div className="flex justify-between text-sm">
           <span className="text-ink">Requests</span>

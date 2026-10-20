@@ -1,30 +1,36 @@
 # @prometheus/database
 
-Supabase clients (`browser.ts`, `server.ts`, `service-role.ts`) plus SQL migrations under `supabase/migrations/`.
+The application uses Drizzle ORM with plain PostgreSQL. `src/schema.ts` is the typed application schema and `drizzle/` contains the ordered SQL migrations.
 
 ## Applying migrations
 
-Apply them in order:
-1. `20260728000000_initial_schema.sql`
-2. `20260729000000_add_admin_audit_reason.sql` (adds `admin_audit_logs.reason`, required by the audit trail but missing from the plan doc's section 6 schema listing)
-3. `20260729000100_fix_profile_trigger_service_role.sql` (lets the service-role client change `profiles.role`/`status` — needed to bootstrap the first admin account; the original trigger only special-cased authenticated admins, not the service-role key itself)
-4. `20260730000000_add_paypal_billing_columns.sql` (adds `plans.provider_plan_id`, loosens `subscriptions.provider` beyond just `'stripe'` — the build uses PayPal, not Stripe, see `packages/billing`)
+Apply the Drizzle migrations in filename order:
 
-Pick one:
+1. `0000_init.sql`
+2. `0001_add_optimization_outcome.sql`
+3. `0002_activate_prompt_versioning.sql`
+4. `0003_add_refresh_tokens.sql`
+5. `0004_default_provider_stripe.sql`
+6. `0005_add_organizations.sql`
 
-1. **Supabase Dashboard (fastest for now)** — open your project's SQL Editor and paste the contents of the migration file, then run it.
-2. **Supabase CLI** — from this package directory:
-   ```
-   supabase login
-   supabase link --project-ref <your-project-ref>
-   supabase db push
-   ```
+The current helper applies one explicitly selected migration and requires `DATABASE_URL`:
 
-## What it sets up
+~~~powershell
+corepack pnpm --filter @prometheus/database run db:apply-schema 0005_add_organizations.sql
+~~~
 
-- `profiles`, `plans`, `subscriptions`, `usage_periods`, `optimization_requests`, `prompt_history`, `prompt_configs`, `admin_audit_logs`, `system_events`, `webhook_events` — matching `@prometheus/shared-types`' `db.ts` row types.
-- RLS on every table: users can read their own rows (`user_id`/`id = auth.uid()`); admins (`role` in `admin`/`super_admin`, via `public.is_admin()`) can read everything. Only `profiles` allows client-side `UPDATE` (own row, non-privileged fields — role/status changes are blocked by trigger unless the actor is an admin).
-- A trigger on `auth.users` (`handle_new_user`) creates the matching `profiles` row on sign-up.
-- `plans`, `subscriptions`, `usage_periods`, `optimization_requests`, etc. are written by server-side code using the service-role client (`service-role.ts`), which bypasses RLS — no client-side INSERT/UPDATE policies exist for them by design.
+Do not re-run a migration already applied to a database; this repository does not yet maintain a migration journal.
 
-Seeding `plans` and wiring Stripe are Phase 4 (see `documentation/architecture/prometheus-plan.md` section 9). `prompt_configs` management UI is Phase 5.
+## Organization schema
+
+`0005_add_organizations.sql` adds organizations, memberships, expiring invitations, shared Stripe subscriptions, the profile's active organization preference, and nullable organization scope columns on optimization requests and audit logs. See `documentation/architecture/organizations.md` for the authorization and billing model.
+
+## Development
+
+~~~powershell
+corepack pnpm --filter @prometheus/database run typecheck
+corepack pnpm --filter @prometheus/database run db:seed
+corepack pnpm --filter @prometheus/auth run db:seed-demo
+~~~
+
+The plan and local demo seeds are idempotent. The demo seed creates all platform and organization role variants with the local-only password printed by the command.
