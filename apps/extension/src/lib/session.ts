@@ -112,7 +112,16 @@ export async function signOut(): Promise<void> {
   await clearStoredSession();
 }
 
-/** Refreshes against POST /api/v1/auth/refresh and persists the new access token. */
+/**
+ * Refreshes against POST /api/v1/auth/refresh and persists BOTH the new
+ * access token and the new refresh token the server rotates in on every
+ * call -- the refresh token passed in here is single-use now (server-side:
+ * see rotateRefreshToken's doc comment) and gets revoked the instant this
+ * call succeeds. Storing anything other than the response's refresh_token
+ * would mean the very next refresh presents an already-rotated token and
+ * gets treated as a stolen-token replay, signing out every session in this
+ * chain.
+ */
 export async function refreshSession(refreshToken: string): Promise<StoredSession | null> {
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
     method: 'POST',
@@ -122,10 +131,13 @@ export async function refreshSession(refreshToken: string): Promise<StoredSessio
   if (!response.ok) return null;
 
   const previous = await getStoredSession();
-  const { access_token } = (await response.json()) as { access_token: string };
+  const { access_token, refresh_token } = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+  };
   const refreshed: StoredSession = {
     access_token,
-    refresh_token: refreshToken,
+    refresh_token,
     expires_at: Date.now() / 1000 + ACCESS_TOKEN_TTL_SECONDS,
     email: previous?.email ?? '',
   };
