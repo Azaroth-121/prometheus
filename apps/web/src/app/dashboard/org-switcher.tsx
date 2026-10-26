@@ -1,27 +1,23 @@
-import type { OrgSummary } from '@prometheus/shared-types';
+import Link from 'next/link';
+import type { OrganizationContext } from '@prometheus/auth';
 
 /**
- * Org switcher, single-org stub (E0.5). Takes the full list of the user's
- * orgs even though only one exists today, so A.6 (real multi-org switching)
- * extends this component instead of replacing it. Read-only for now: it
- * shows the active org and the user's role, and deliberately offers no
- * switch action -- a fake dropdown would promise something that can't work
- * yet.
+ * Header pill showing which context the dashboard is acting in (E0.5): the
+ * active organization with the user's role in it, or their personal account.
+ * Read-only -- it links to /dashboard/organization, where switching already
+ * lives. A full in-header switcher is A.6.
  */
-export function OrgSwitcher({ orgs, activeOrgId }: { orgs: readonly OrgSummary[]; activeOrgId: string }) {
-  const active = orgs.find((org) => org.id === activeOrgId);
-  if (!active) return null;
-
-  const otherCount = orgs.length - 1;
-
+export function OrgSwitcher({ organization }: { organization: OrganizationContext | null }) {
   return (
-    <div
-      className="flex shrink-0 items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1 text-xs"
-      title={active.name}
+    <Link
+      href="/dashboard/organization"
+      title={organization ? `${organization.name}: manage or switch organizations` : 'Personal account: switch to or create an organization'}
+      className="flex shrink-0 items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1 text-xs transition-colors hover:border-glow/60"
     >
-      <span className="max-w-[10rem] truncate font-medium text-ink">{active.name}</span>
-      <span className="rounded-full bg-white/10 px-1.5 py-0.5 capitalize text-ink-muted">{active.role}</span>
-      {otherCount > 0 && <span className="text-ink-muted">+{otherCount}</span>}
-    </div>
+      <span className="max-w-[10rem] truncate font-medium text-ink">{organization?.name ?? 'Personal'}</span>
+      {organization && (
+        <span className="rounded-full bg-white/10 px-1.5 py-0.5 capitalize text-ink-muted">{organization.role}</span>
+      )}
+    </Link>
   );
 }

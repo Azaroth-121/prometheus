@@ -1,5 +1,4 @@
 import { motion, type HTMLMotionProps } from 'motion/react';
-import type { OrgSummary } from '@prometheus/shared-types';
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 
 export function Panel({ className = '', children, ...props }: HTMLMotionProps<'div'>) {
@@ -120,15 +119,14 @@ export function Glow({ className = '' }: { className?: string }) {
   );
 }
 
-/** Same read-only single-org pill as apps/web's dashboard OrgSwitcher (E0.5) -- name + the user's role in it. */
-export function OrgBadge({ org, className = '' }: { org: OrgSummary; className?: string }) {
+/** The popup's version of apps/web's dashboard org pill (E0.5): the active org's name, or "Personal". */
+export function OrgBadge({ label, className = '' }: { label: string; className?: string }) {
   return (
     <span
-      title={org.name}
-      className={`flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2 py-0.5 text-[11px] ${className}`}
+      title={label}
+      className={`min-w-0 truncate rounded-full border border-line bg-surface-raised px-2 py-0.5 text-[11px] font-medium text-ink ${className}`}
     >
-      <span className="truncate font-medium text-ink">{org.name}</span>
-      <span className="shrink-0 rounded-full bg-white/10 px-1.5 capitalize text-ink-muted">{org.role}</span>
+      {label}
     </span>
   );
 }

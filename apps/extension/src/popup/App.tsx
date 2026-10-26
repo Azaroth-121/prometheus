@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { OptimizationMode, OptimizeSuccessResponse, OrgSummary, UsageSummary } from '@prometheus/shared-types';
+import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@prometheus/shared-types';
 import { isOptimizeError, OPTIMIZATION_MODES } from '@prometheus/shared-types';
-import { getOrgs, getUsage, optimize, submitOutcome } from '../lib/api';
+import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
 import { Button, Glow, Input, OrgBadge, Panel, SegmentedControl, TextArea } from './ui';
 
@@ -49,7 +49,7 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [tab, setTab] = useState<Tab>('optimize');
   const [usage, setUsage] = useState<UsageSummary | null>(null);
-  const [activeOrg, setActiveOrg] = useState<OrgSummary | null>(null);
+  const [orgLabel, setOrgLabel] = useState<string | null>(null);
 
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<OptimizationMode>('standard');
@@ -65,13 +65,15 @@ export default function App() {
     });
   }, []);
 
-  // Org UI is server-flagged (FEATURE_ORGS): getOrgs() returns null while it's
-  // off, and the popup simply renders no org badge.
+  // Which context the popup is acting in -- read from /api/v1/usage, which
+  // already reports the billing scope and active org name (E0.4).
   useEffect(() => {
     if (!isSignedIn) return;
-    getOrgs().then((result) => {
-      setActiveOrg(result?.orgs.find((org) => org.id === result.active_org_id) ?? null);
-    });
+    getUsage()
+      .then((summary) => {
+        setOrgLabel(summary.billing_scope === 'organization' ? (summary.organization_name ?? 'Organization') : 'Personal');
+      })
+      .catch(() => setOrgLabel(null));
   }, [isSignedIn]);
 
   useEffect(() => {
@@ -99,7 +101,7 @@ export default function App() {
     await signOut();
     setIsSignedIn(false);
     setUserEmail(null);
-    setActiveOrg(null);
+    setOrgLabel(null);
     setResult(null);
     setError(null);
     setTab('optimize');
@@ -163,7 +165,7 @@ export default function App() {
         >
           Prometheus
         </h1>
-        {isSignedIn && activeOrg && <OrgBadge org={activeOrg} className="ml-auto" />}
+        {isSignedIn && orgLabel && <OrgBadge label={orgLabel} className="ml-auto" />}
       </div>
 
       {isSignedIn === false && (
