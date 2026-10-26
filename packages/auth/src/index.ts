@@ -4,3 +4,4 @@ export * from './require-role';
 export * from './profile-mapper';
 export * from './tokens';
 export * from './org';
+export * from './organization';

@@ -2,6 +2,7 @@ import { listPromptConfigs } from '@prometheus/prompts';
 import { OPTIMIZATION_MODES } from '@prometheus/shared-types';
 import { Button, Card, Input } from '@prometheus/ui';
 import { db } from '@/lib/db';
+import { requirePlatformAdmin } from '@/lib/admin';
 import { createDraftPromptConfigAction, publishPromptConfigAction } from './actions';
 
 const TEXTAREA_CLASSES =
@@ -10,6 +11,7 @@ const PROMPT_PREVIEW_CLASSES =
   'max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-line bg-surface p-3 text-xs text-ink-muted';
 
 export default async function AdminPromptConfigsPage() {
+  await requirePlatformAdmin();
   const configs = await listPromptConfigs(db);
 
   return (
