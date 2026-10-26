@@ -17,9 +17,9 @@
     "@prometheus/shared-types": "workspace:*",
     "@prometheus/ui": "workspace:*",
     "@prometheus/validation": "workspace:*",
-    "drizzle-orm": "^0.36.4",
+    "drizzle-orm": "^0.45.4",
     "next": "^15.5.28",
-    "next-auth": "5.0.0-beta.25",
+    "next-auth": "5.0.0-beta.32",
     "openai": "^4.77.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
