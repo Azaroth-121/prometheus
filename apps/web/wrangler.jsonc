@@ -33,6 +33,44 @@
   },
   "observability": {
     "enabled": true
+  },
+  // QA environment: a separate Worker + database for demo and QA testers (15-20 people).
+  // Deploy with `--env qa`. Its own secrets (generated fresh, NOT production values), Stripe
+  // in TEST mode, Neon free Postgres behind its own Hyperdrive config, and no cron, so testers
+  // never get billing emails. Production users stay on Azure until the real cutover.
+  "env": {
+    "qa": {
+      "name": "prometheus-qa",
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "prometheus-qa"
+        }
+      ],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          // Set after `wrangler hyperdrive create prometheus-qa-db ...` (QA setup, step 4).
+          "id": "00000000000000000000000000000000",
+          "localConnectionString": "postgresql://postgres:postgres@localhost:5432/prometheus"
+        }
+      ],
+      "triggers": {
+        "crons": []
+      },
+      "vars": {
+        "NEXT_PUBLIC_APP_URL": "https://prometheus-qa.soveraign.solutions"
+      },
+      "routes": [
+        {
+          "pattern": "prometheus-qa.soveraign.solutions",
+          "custom_domain": true
+        }
+      ],
+      "observability": {
+        "enabled": true
+      }
+    }
   }
   // Secrets are set with `wrangler secret put` (never committed), copied UNCHANGED from the
   // current Azure app settings: AUTH_SECRET, EXTENSION_JWT_SECRET, CRON_SECRET,

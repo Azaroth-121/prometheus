@@ -56,3 +56,27 @@ production build, and the standalone server signing in against Postgres.
 - `sharp` (bundled by Next 15 for image optimization, 3 high advisories) is not used on Workers.
 - Still to do before cutover: Hyperdrive id, secrets, Stripe webhook + return URLs on the new
   hostname, PlanetScale database and a rehearsal data copy (plan §4/§6).
+
+## QA environment (first deploy) — 2026-10-26
+Decided by the CEO: Workers Paid ($5/month) on the SoverAIgn Cloudflare account, with a **free
+Neon Postgres** for a demo/QA environment for 15-20 real testers. Production stays on Azure.
+
+| | QA |
+|---|---|
+| Worker | `prometheus-qa` (`wrangler deploy --env qa`) |
+| URL | `https://prometheus-qa.soveraign.solutions` (Workers custom domain) |
+| Database | Neon free (scales to zero after 5 min idle; ~1 s first request after) via Hyperdrive config `prometheus-qa-db` |
+| Secrets | fresh random `AUTH_SECRET`, `EXTENSION_JWT_SECRET`, `CRON_SECRET`; **Stripe test-mode** keys; own `OPENAI_API_KEY` usage |
+| Cron | off |
+
+Setup order:
+1. Account owner upgrades to **Workers Paid**.
+2. Create a Neon project; keep its **direct** connection string out of chat and the repo.
+3. `npx wrangler login` (browser approval).
+4. `npx wrangler hyperdrive create prometheus-qa-db --connection-string="<neon direct url>"`;
+   put the returned id in `env.qa.hyperdrive[0].id`.
+5. Apply `packages/database/drizzle/*.sql` in order and seed plans against the Neon database.
+6. Set secrets: `npx wrangler secret put <NAME> --env qa`.
+7. Build on **Linux** (`pnpm cf:build` with `NEXT_PUBLIC_APP_URL` set to the QA URL), then
+   `npx wrangler deploy --env qa`.
+8. Smoke test: sign-up, sign-in, usage, optimize, Stripe test checkout.
