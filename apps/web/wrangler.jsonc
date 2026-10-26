@@ -1,0 +1,43 @@
+// Cloudflare Workers config for the Prometheus web app + API (OpenNext adapter).
+// Migration plan: SoverAIgn-Solutions/organizational-singularity docs/migration/cloudflare.md §6.
+// Azure stays the live host until cutover; nothing here is deployed by CI yet.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "prometheus-web",
+  // Custom entry: wraps the OpenNext handler and adds the daily cron (worker.ts).
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "prometheus-web"
+    }
+  ],
+  // Postgres through Hyperdrive. Replace the id after Phase 0 creates the Hyperdrive config
+  // (wrangler hyperdrive create ...). localConnectionString is only used by `wrangler dev`.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@localhost:5432/prometheus"
+    }
+  ],
+  // Replaces the Azure Container Apps job caj-prom-expiry-dev-eus2-01 (daily 13:00 UTC).
+  "triggers": {
+    "crons": ["0 13 * * *"]
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Secrets are set with `wrangler secret put` (never committed), copied UNCHANGED from the
+  // current Azure app settings: AUTH_SECRET, EXTENSION_JWT_SECRET, CRON_SECRET,
+  // STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, OPENAI_API_KEY, MAKE_EXPIRY_WEBHOOK_URL,
+  // MAKE_VERIFICATION_WEBHOOK_URL, MAKE_ORGANIZATION_INVITE_WEBHOOK_URL.
+  // NEXT_PUBLIC_APP_URL is set per environment. The Postgres password is new on PlanetScale
+  // and lives in the Hyperdrive config, not here.
+}
