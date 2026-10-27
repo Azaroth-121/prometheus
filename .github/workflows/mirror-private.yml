@@ -5,6 +5,12 @@ name: Mirror to private org repo
 # out of it directly (no PRs, no branch protection there -- that needs a
 # paid GitHub plan on the org's side), so this replaces a manual weekly
 # `git push soveraign master`.
+#
+# Pushes over SSH with a deploy key: the public half is a write-enabled
+# deploy key on SoverAIgn-Solutions/prometheus only, the private half is
+# the MIRROR_DEPLOY_KEY secret here. A deploy key reaches that one repo and
+# nothing else, and needs no org-owner approval (the old MIRROR_TOKEN
+# personal token never had access to the org repo, so this never ran green).
 on:
   push:
     branches: [master]
@@ -21,10 +27,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Push master to the private mirror
         run: |
-          git remote add private "https://x-access-token:${MIRROR_TOKEN}@github.com/SoverAIgn-Solutions/prometheus.git"
-          git push private master
+          mkdir -p ~/.ssh
+          printf '%s\n' "$MIRROR_DEPLOY_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          # GitHub's published ed25519 host key (gh api meta), pinned rather
+          # than trusted on first use.
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git remote add private git@github.com:SoverAIgn-Solutions/prometheus.git
+          git push private HEAD:refs/heads/master
         env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          MIRROR_DEPLOY_KEY: ${{ secrets.MIRROR_DEPLOY_KEY }}
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/mirror_key
