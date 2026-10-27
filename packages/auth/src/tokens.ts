@@ -28,6 +28,8 @@ import { refreshTokens } from '@prometheus/database';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+/** How long a just-rotated refresh token can be presented again without counting as reuse (see rotateRefreshToken). */
+export const ROTATION_GRACE_SECONDS = 30;
 
 export interface AccessTokenPayload {
   sub: string; // profile id
@@ -164,7 +166,13 @@ export async function rotateRefreshToken(db: Database, token: string, secret: st
   if (!row) return null;
 
   if (row.revokedAt) {
-    if (row.revokedReason === 'rotated') {
+    // Inside the grace window a second presentation is the extension's popup
+    // and background worker racing to refresh the same stored token -- the
+    // loser just re-reads the winner's new token (see session.ts), so it is
+    // refused without torching the family. Only a replay after the window is
+    // treated as theft.
+    const withinGrace = row.revokedAt.getTime() > Date.now() - ROTATION_GRACE_SECONDS * 1000;
+    if (row.revokedReason === 'rotated' && !withinGrace) {
       await revokeTokenFamily(db, row.familyId, 'reuse_detected');
     }
     return null;
@@ -179,16 +187,10 @@ export async function rotateRefreshToken(db: Database, token: string, secret: st
       .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt)))
       .returning({ id: refreshTokens.id });
 
-    // Someone else rotated (or is concurrently rotating) this exact token in
-    // the gap between the select above and this update -- two holders of the
-    // same still-live token racing each other is itself the reuse signal,
-    // indistinguishable from a slightly slower theft-replay, so it gets the
-    // same family-wide response rather than a quiet failure.
+    // Someone else rotated this exact token in the gap between the select
+    // above and this update -- milliseconds apart, so by definition inside
+    // the grace window: refuse quietly, same as the revokedAt branch above.
     if (revoked.length === 0) {
-      await tx
-        .update(refreshTokens)
-        .set({ revokedAt: new Date(), revokedReason: 'reuse_detected' })
-        .where(and(eq(refreshTokens.familyId, row.familyId), isNull(refreshTokens.revokedAt)));
       throw new ConcurrentRotationError();
     }
 

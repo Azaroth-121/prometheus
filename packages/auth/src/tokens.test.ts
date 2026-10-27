@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import * as schema from '@prometheus/database';
 import { profiles, refreshTokens, type Database } from '@prometheus/database';
 import {
   issueRefreshToken,
+  ROTATION_GRACE_SECONDS,
   revokeAllRefreshTokensForUser,
   revokeRefreshToken,
   rotateRefreshToken,
@@ -56,6 +57,14 @@ describe('refresh token revocation', () => {
       .values({ email: `user-${crypto.randomUUID()}@example.com`, passwordHash: 'hash' })
       .returning({ id: profiles.id });
     return user!.id;
+  }
+
+  /** Moves this user's rotated tokens' revokedAt to before the grace window, so a replay counts as theft. */
+  async function backdateRotation(userId: string) {
+    await db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date(Date.now() - (ROTATION_GRACE_SECONDS + 60) * 1000) })
+      .where(and(eq(refreshTokens.userId, userId), eq(refreshTokens.revokedReason, 'rotated')));
   }
 
   it('issues a refresh token that verifies back to the same user', async () => {
@@ -174,7 +183,9 @@ describe('refresh token revocation', () => {
       const stillGoodBeforeReplay = await verifyRefreshToken(db, rotatedOnce!.refreshToken, SECRET);
       expect(stillGoodBeforeReplay).toBe(userId);
 
-      // Someone replays the original, already-rotated token -- the theft signal.
+      // Someone replays the original, already-rotated token after the grace
+      // window has passed -- the theft signal.
+      await backdateRotation(userId);
       const replayResult = await rotateRefreshToken(db, original, SECRET);
       expect(replayResult).toBeNull();
 
@@ -194,9 +205,41 @@ describe('refresh token revocation', () => {
       const otherToken = await issueRefreshToken(db, otherUserId, SECRET);
 
       await rotateRefreshToken(db, token, SECRET);
+      await backdateRotation(userId);
       await rotateRefreshToken(db, token, SECRET); // triggers reuse detection on userId's family only
 
       expect(await verifyRefreshToken(db, otherToken, SECRET)).toBe(otherUserId);
+    });
+
+    it('a replay inside the grace window is refused but does not revoke the family (popup and background racing)', async () => {
+      const userId = await seedUser();
+      const original = await issueRefreshToken(db, userId, SECRET);
+      const rotatedOnce = await rotateRefreshToken(db, original, SECRET);
+      expect(rotatedOnce).not.toBeNull();
+
+      const racingSecondCall = await rotateRefreshToken(db, original, SECRET);
+      expect(racingSecondCall).toBeNull();
+
+      // The winner's replacement keeps working, and nothing was marked as reuse.
+      expect(await verifyRefreshToken(db, rotatedOnce!.refreshToken, SECRET)).toBe(userId);
+      const rows = await db.select().from(refreshTokens).where(eq(refreshTokens.userId, userId));
+      expect(rows.find((r) => r.revokedReason === 'reuse_detected')).toBeUndefined();
+    });
+
+    it('two simultaneous rotations of the same token mint at most one replacement and never revoke the family', async () => {
+      const userId = await seedUser();
+      const original = await issueRefreshToken(db, userId, SECRET);
+
+      const results = await Promise.all([
+        rotateRefreshToken(db, original, SECRET),
+        rotateRefreshToken(db, original, SECRET),
+      ]);
+      const winners = results.filter((r) => r !== null);
+      expect(winners).toHaveLength(1);
+
+      expect(await verifyRefreshToken(db, winners[0]!.refreshToken, SECRET)).toBe(userId);
+      const rows = await db.select().from(refreshTokens).where(eq(refreshTokens.userId, userId));
+      expect(rows.find((r) => r.revokedReason === 'reuse_detected')).toBeUndefined();
     });
   });
 });

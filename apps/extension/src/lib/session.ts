@@ -157,6 +157,23 @@ export async function getAccessToken(): Promise<string | null> {
     return session.access_token;
   }
 
-  const refreshed = await refreshSession(session.refresh_token);
-  return refreshed?.access_token ?? null;
+  inFlightRefresh ??= refreshSession(session.refresh_token).finally(() => {
+    inFlightRefresh = null;
+  });
+  const refreshed = await inFlightRefresh;
+  if (refreshed) return refreshed.access_token;
+
+  // The popup and the background worker don't share memory, so both can
+  // refresh the same stored token at once. The server refuses the loser
+  // without revoking anything (ROTATION_GRACE_SECONDS in @prometheus/auth);
+  // the winner's new session lands in storage moments later, so use that.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const latest = await getStoredSession();
+    if (latest && latest.refresh_token !== session.refresh_token) return latest.access_token;
+  }
+  return null;
 }
+
+/** One refresh at a time within this context -- concurrent callers share it instead of each presenting the same single-use token. */
+let inFlightRefresh: Promise<StoredSession | null> | null = null;
