@@ -14,6 +14,19 @@ const nextConfig = {
     '@prometheus/prompts',
     '@prometheus/validation',
   ],
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          // Tells browsers to use HTTPS for this origin even before the
+          // first request -- covers the case middleware's redirect can't (a
+          // cached bookmark or a typed http:// URL on a repeat visit).
+          { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

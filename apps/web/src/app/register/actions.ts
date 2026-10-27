@@ -9,10 +9,23 @@ export interface RegisterState {
   success: boolean;
 }
 
+// Below this, a submission is faster than a person could plausibly have read
+// the form and typed a password -- a bot calling the action directly, not a
+// real sign-up. Paired with the "company" honeypot field below.
+const MIN_HUMAN_SUBMIT_MS = 1500;
+
 export async function registerAction(
   _prevState: RegisterState,
   formData: FormData
 ): Promise<RegisterState> {
+  const honeypot = String(formData.get('company') ?? '');
+  const startedAt = Number(formData.get('startedAt') ?? 0);
+  if (honeypot !== '' || !startedAt || Date.now() - startedAt < MIN_HUMAN_SUBMIT_MS) {
+    // Report success without creating an account -- doesn't tip off the bot
+    // that it was detected, and avoids revealing which field is the honeypot.
+    return { error: null, success: true };
+  }
+
   const email = String(formData.get('email') ?? '').trim();
   const password = String(formData.get('password') ?? '');
 
