@@ -1,14 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { verifyRefreshToken, issueAccessToken } from '@prometheus/auth';
+import { rotateRefreshToken, issueAccessToken } from '@prometheus/auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
 /**
  * Replaces Supabase's `POST /auth/v1/token?grant_type=refresh_token`, which
  * apps/extension/src/background.ts used to call directly against Supabase's
- * GoTrue endpoint. Same shape (refresh token in, fresh access token out) so
- * background.ts's refresh loop needs its endpoint URL and response field
- * names updated, not its overall structure.
+ * GoTrue endpoint.
+ *
+ * Rotates the refresh token on every call (see rotateRefreshToken's own doc
+ * comment) rather than just verifying it and handing back a new access
+ * token -- a refresh token used to stay valid, replayable, for its full
+ * 30-day life. The response now includes a new `refresh_token` too, which
+ * the caller MUST persist in place of the one it sent (see
+ * apps/extension/src/lib/session.ts's refreshSession) -- the old one is
+ * revoked the instant this call succeeds, and presenting it again is treated
+ * as a stolen-token signal that revokes the whole session family.
  */
 export async function POST(request: NextRequest) {
   let body: { refresh_token?: string };
@@ -22,12 +29,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'refresh_token is required.' }, { status: 400 });
   }
 
-  const userId = await verifyRefreshToken(db, body.refresh_token, env.extensionJwtSecret);
-  if (!userId) {
+  const rotated = await rotateRefreshToken(db, body.refresh_token, env.extensionJwtSecret);
+  if (!rotated) {
     return NextResponse.json({ error: 'Invalid or expired refresh token.' }, { status: 401 });
   }
 
   return NextResponse.json({
-    access_token: issueAccessToken(userId, env.extensionJwtSecret),
+    access_token: issueAccessToken(rotated.userId, env.extensionJwtSecret),
+    refresh_token: rotated.refreshToken,
   });
 }

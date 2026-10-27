@@ -112,7 +112,16 @@ export async function signOut(): Promise<void> {
   await clearStoredSession();
 }
 
-/** Refreshes against POST /api/v1/auth/refresh and persists the new access token. */
+/**
+ * Refreshes against POST /api/v1/auth/refresh and persists BOTH the new
+ * access token and the new refresh token the server rotates in on every
+ * call -- the refresh token passed in here is single-use now (server-side:
+ * see rotateRefreshToken's doc comment) and gets revoked the instant this
+ * call succeeds. Storing anything other than the response's refresh_token
+ * would mean the very next refresh presents an already-rotated token and
+ * gets treated as a stolen-token replay, signing out every session in this
+ * chain.
+ */
 export async function refreshSession(refreshToken: string): Promise<StoredSession | null> {
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
     method: 'POST',
@@ -122,10 +131,13 @@ export async function refreshSession(refreshToken: string): Promise<StoredSessio
   if (!response.ok) return null;
 
   const previous = await getStoredSession();
-  const { access_token } = (await response.json()) as { access_token: string };
+  const { access_token, refresh_token } = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+  };
   const refreshed: StoredSession = {
     access_token,
-    refresh_token: refreshToken,
+    refresh_token,
     expires_at: Date.now() / 1000 + ACCESS_TOKEN_TTL_SECONDS,
     email: previous?.email ?? '',
   };
@@ -145,6 +157,23 @@ export async function getAccessToken(): Promise<string | null> {
     return session.access_token;
   }
 
-  const refreshed = await refreshSession(session.refresh_token);
-  return refreshed?.access_token ?? null;
+  inFlightRefresh ??= refreshSession(session.refresh_token).finally(() => {
+    inFlightRefresh = null;
+  });
+  const refreshed = await inFlightRefresh;
+  if (refreshed) return refreshed.access_token;
+
+  // The popup and the background worker don't share memory, so both can
+  // refresh the same stored token at once. The server refuses the loser
+  // without revoking anything (ROTATION_GRACE_SECONDS in @prometheus/auth);
+  // the winner's new session lands in storage moments later, so use that.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const latest = await getStoredSession();
+    if (latest && latest.refresh_token !== session.refresh_token) return latest.access_token;
+  }
+  return null;
 }
+
+/** One refresh at a time within this context -- concurrent callers share it instead of each presenting the same single-use token. */
+let inFlightRefresh: Promise<StoredSession | null> | null = null;

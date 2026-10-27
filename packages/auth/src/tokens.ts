@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Database } from '@prometheus/database';
@@ -27,6 +28,8 @@ import { refreshTokens } from '@prometheus/database';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+/** How long a just-rotated refresh token can be presented again without counting as reuse (see rotateRefreshToken). */
+export const ROTATION_GRACE_SECONDS = 30;
 
 export interface AccessTokenPayload {
   sub: string; // profile id
@@ -46,9 +49,15 @@ export function issueAccessToken(userId: string, secret: string): string {
 }
 
 export async function issueRefreshToken(db: Database, userId: string, secret: string): Promise<string> {
+  // Generated up front (rather than left to the column default) so this
+  // fresh token can be its own family's root: familyId = id. Every later
+  // rotation of it inherits this same familyId -- see rotateRefreshToken.
+  const id = randomUUID();
   const [row] = await db
     .insert(refreshTokens)
     .values({
+      id,
+      familyId: id,
       userId,
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
     })
@@ -104,6 +113,108 @@ export async function verifyRefreshToken(db: Database, token: string, secret: st
 
   return payload.sub;
 }
+
+export interface RotatedRefreshToken {
+  userId: string;
+  refreshToken: string;
+}
+
+/** Revokes every still-live token sharing this family -- the reuse-detection response: one stolen/replayed token torches its whole lineage, not just itself. */
+async function revokeTokenFamily(db: Database, familyId: string, reason: string): Promise<void> {
+  await db
+    .update(refreshTokens)
+    .set({ revokedAt: new Date(), revokedReason: reason })
+    .where(and(eq(refreshTokens.familyId, familyId), isNull(refreshTokens.revokedAt)));
+}
+
+/**
+ * Verifies the presented refresh token and, if it's still live, atomically
+ * revokes it and issues a replacement in the same family -- so a refresh
+ * token is single-use, unlike an access token. Closes the replay window a
+ * bare verify-and-reissue-access-token left open: previously a stolen
+ * refresh token stayed valid for its full 30-day life with no way to tell
+ * the legitimate client and an attacker apart.
+ *
+ * Reuse detection: if the presented token's row is already revoked
+ * specifically because it was rotated (not signed-out or admin-revoked),
+ * that means whoever is presenting it now is a *second* holder of a token
+ * the legitimate client already exchanged -- the classic signal of theft.
+ * The whole family is revoked in response, forcing every session descended
+ * from that login to re-authenticate, not just this one request.
+ *
+ * Returns null for: an invalid/expired JWT, an unknown jti, an expired row,
+ * or a row revoked for any other reason (sign-out, admin action) -- none of
+ * those are reuse of a *rotated* token, so they fail closed without the
+ * family-wide response.
+ */
+export async function rotateRefreshToken(db: Database, token: string, secret: string): Promise<RotatedRefreshToken | null> {
+  const payload = decodeRefreshToken(token, secret);
+  if (!payload) return null;
+
+  const [row] = await db
+    .select({
+      id: refreshTokens.id,
+      familyId: refreshTokens.familyId,
+      userId: refreshTokens.userId,
+      expiresAt: refreshTokens.expiresAt,
+      revokedAt: refreshTokens.revokedAt,
+      revokedReason: refreshTokens.revokedReason,
+    })
+    .from(refreshTokens)
+    .where(and(eq(refreshTokens.id, payload.jti), eq(refreshTokens.userId, payload.sub)))
+    .limit(1);
+  if (!row) return null;
+
+  if (row.revokedAt) {
+    // Inside the grace window a second presentation is the extension's popup
+    // and background worker racing to refresh the same stored token -- the
+    // loser just re-reads the winner's new token (see session.ts), so it is
+    // refused without torching the family. Only a replay after the window is
+    // treated as theft.
+    const withinGrace = row.revokedAt.getTime() > Date.now() - ROTATION_GRACE_SECONDS * 1000;
+    if (row.revokedReason === 'rotated' && !withinGrace) {
+      await revokeTokenFamily(db, row.familyId, 'reuse_detected');
+    }
+    return null;
+  }
+  if (row.expiresAt <= new Date()) return null;
+
+  const newId = randomUUID();
+  const refreshToken = await db.transaction(async (tx) => {
+    const revoked = await tx
+      .update(refreshTokens)
+      .set({ revokedAt: new Date(), revokedReason: 'rotated', lastUsedAt: new Date() })
+      .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt)))
+      .returning({ id: refreshTokens.id });
+
+    // Someone else rotated this exact token in the gap between the select
+    // above and this update -- milliseconds apart, so by definition inside
+    // the grace window: refuse quietly, same as the revokedAt branch above.
+    if (revoked.length === 0) {
+      throw new ConcurrentRotationError();
+    }
+
+    await tx.insert(refreshTokens).values({
+      id: newId,
+      familyId: row.familyId,
+      userId: row.userId,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
+    });
+
+    return jwt.sign({ sub: row.userId, type: 'refresh', jti: newId } satisfies RefreshTokenPayload, secret, {
+      expiresIn: REFRESH_TOKEN_TTL_SECONDS,
+    });
+  }).catch((err) => {
+    if (err instanceof ConcurrentRotationError) return null;
+    throw err;
+  });
+
+  if (refreshToken === null) return null;
+
+  return { userId: row.userId, refreshToken };
+}
+
+class ConcurrentRotationError extends Error {}
 
 /**
  * Revokes the single session this refresh token belongs to (e.g. sign-out on
