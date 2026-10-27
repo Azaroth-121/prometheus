@@ -12,10 +12,13 @@ const { auth } = NextAuth(authConfig);
 const PROTECTED_PREFIXES = ['/dashboard', '/admin'];
 
 export default auth((request) => {
-  // Azure Container Apps' ingress terminates TLS and forwards plain HTTP
-  // internally, setting x-forwarded-proto to what the client actually used --
-  // this is what lets us tell "client used http" apart from "internal hop",
-  // which request.nextUrl.protocol can't distinguish on its own.
+  // The edge in front of the app (Azure Container Apps' ingress today,
+  // Cloudflare after the move) terminates TLS and sets x-forwarded-proto to
+  // what the client actually used -- this is what lets us tell "client used
+  // http" apart from "internal hop", which request.nextUrl.protocol can't
+  // distinguish on its own. On Cloudflare, "Always Use HTTPS" on the zone
+  // redirects before the request reaches the Worker; this stays as the
+  // fallback when the header does say http.
   const forwardedProto = request.headers.get('x-forwarded-proto');
   if (process.env.NODE_ENV === 'production' && forwardedProto === 'http') {
     const httpsUrl = new URL(request.nextUrl.toString());
