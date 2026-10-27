@@ -25,6 +25,9 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    ".open-next",
+    "worker.ts",
+    "worker-configuration.d.ts"
   ]
 }

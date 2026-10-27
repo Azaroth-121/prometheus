@@ -7,9 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv",
+    "typecheck:worker": "wrangler types --env-interface CloudflareEnv && tsc --noEmit -p tsconfig.worker.json"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.20.13",
     "@prometheus/auth": "workspace:*",
     "@prometheus/billing": "workspace:*",
     "@prometheus/database": "workspace:*",
@@ -21,6 +26,8 @@
     "next": "^15.5.28",
     "next-auth": "5.0.0-beta.32",
     "openai": "^4.77.0",
+    "pg": "^8.23.0",
+    "pg-cloudflare": "^1.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -33,6 +40,7 @@
     "eslint-config-next": "^15.5.28",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wrangler": "^4.152.0"
   }
 }
