@@ -1,11 +1,9 @@
-# Every PR automatically requests both of these as reviewers. Paired with
-# branch protection's "Require review from Code Owners" so no merge to
-# master can skip review, matching the project guidelines.
+# Kurt approves everything that lands on master. Every PR automatically
+# requests his review, and branch protection's "Require review from Code
+# Owners" means a teammate's PR cannot merge without it.
 #
-# Two names, not one: with only @Azaroth-121 listed, GitHub's "authors
-# can't approve their own PR" rule meant every PR Kurt opened himself
-# (including real security fixes) had no one left who could satisfy the
-# code-owner requirement -- they sat unreviewable for weeks. With Kazuhiro
-# also a code owner, either of them can review the other's solo PRs; Paul
-# and Lance's PRs still route to both.
-* @Azaroth-121 @KToyoshima
+# GitHub never lets an author approve their own PR, so Kurt merges PRs he
+# opened himself with the admin override ("include administrators" is off
+# on master). The override also skips the required "build" check, so check
+# CI is green before using it.
+* @Azaroth-121
