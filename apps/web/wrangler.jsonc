@@ -18,18 +18,30 @@
       "service": "prometheus-web"
     }
   ],
-  // Postgres through Hyperdrive. Replace the id after Phase 0 creates the Hyperdrive config
-  // (wrangler hyperdrive create ...). localConnectionString is only used by `wrangler dev`.
+  // Served at https://prometheus-web.steven-palange.workers.dev until soveraign.solutions moves
+  // to Cloudflare DNS (its nameservers are still at Network Solutions); then add a custom-domain
+  // route and change NEXT_PUBLIC_APP_URL (and the extension's API URL) to it.
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://prometheus-web.steven-palange.workers.dev"
+  },
+  // Postgres through Hyperdrive config `prometheus-db` -> Neon project `prometheus`
+  // (old-queen-46998133, Soveraign org, Singapore). Query caching is DISABLED on that config
+  // (wrangler hyperdrive update <id> --caching-disabled true): cached reads served stale logins,
+  // revoked tokens and usage counts. localConnectionString is only for `wrangler dev`.
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "00000000000000000000000000000000",
+      "id": "3e3a29704d3040708d3b17190331ca5d",
       "localConnectionString": "postgresql://postgres:postgres@localhost:5432/prometheus"
     }
   ],
-  // Replaces the Azure Container Apps job caj-prom-expiry-dev-eus2-01 (daily 13:00 UTC).
+  // Will replace the Azure Container Apps job caj-prom-expiry-dev-eus2-01 (daily 13:00 UTC).
+  // Off until cutover: while Azure's job still runs, both would email the same users.
+  // After cutover set this to ["0 13 * * *"].
   "triggers": {
-    "crons": ["0 13 * * *"]
+    "crons": []
   },
   "observability": {
     "enabled": true
