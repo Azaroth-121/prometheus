@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:apply-schema": "tsx src/migrate.ts",
-    "db:seed": "tsx src/seed.ts"
+    "db:seed": "tsx src/seed.ts",
+    "db:check-org-integrity": "tsx src/check-org-integrity.ts"
   },
   "dependencies": {
     "@prometheus/shared-types": "workspace:*",
