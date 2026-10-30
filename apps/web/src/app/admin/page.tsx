@@ -14,7 +14,8 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
 
 export default async function AdminOverviewPage() {
   await requirePlatformAdmin();
-  const since = new Date();
+  const now = new Date();
+  const since = new Date(now);
   since.setUTCDate(since.getUTCDate() - DAYS);
   since.setUTCHours(0, 0, 0, 0);
 
@@ -23,6 +24,7 @@ export default async function AdminOverviewPage() {
       id: organizationSubscriptions.providerSubscriptionId,
       status: organizationSubscriptions.status,
       createdAt: organizationSubscriptions.createdAt,
+      periodEnd: organizationSubscriptions.currentPeriodEnd,
       plan: plans.name,
       price: plans.monthlyPrice,
       currency: plans.currency,
@@ -31,6 +33,7 @@ export default async function AdminOverviewPage() {
       id: subscriptions.providerSubscriptionId,
       status: subscriptions.status,
       createdAt: subscriptions.createdAt,
+      periodEnd: subscriptions.currentPeriodEnd,
       plan: plans.name,
       price: plans.monthlyPrice,
       currency: plans.currency,
@@ -61,7 +64,9 @@ export default async function AdminOverviewPage() {
     ...orgRows.map((row) => ({ ...row, scope: 'Organization' })),
     ...userRows.filter((row) => !orgIds.has(row.id)).map((row) => ({ ...row, scope: 'Individual' })),
   ];
-  const active = all.filter((row) => row.status === 'active');
+  // Match the billing access path: an active status with an expired period
+  // does not grant a paid plan and should not contribute to monthly value.
+  const active = all.filter((row) => row.status === 'active' && row.periodEnd > now);
   const monthlyValue = active.filter((row) => row.currency.toLowerCase() === 'usd').reduce((sum, row) => sum + Number(row.price), 0);
   const mix = new Map<string, number>();
   for (const row of active) {
