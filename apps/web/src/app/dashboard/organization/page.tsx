@@ -2,7 +2,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getActiveOrganization, getCurrentProfile, getUserOrganizations } from '@prometheus/auth';
-import { getCurrentPlanInfo, getOrganizationMemberUsage, getUsageSummary } from '@prometheus/billing';
+import { getCurrentPlanInfo, getLicenseSummary, getOrganizationMemberUsage, getUsageSummary } from '@prometheus/billing';
 import {
   adminAuditLogs,
   organizationInvitations,
@@ -11,8 +11,11 @@ import {
 } from '@prometheus/database';
 import { Button, Card, Input } from '@prometheus/ui';
 import {
+  assignLicenseAction,
   createOrganizationAction,
   leaveOrganizationAction,
+  reassignLicenseAction,
+  removeLicenseAction,
   removeMemberAction,
   revokeInvitationAction,
   switchOrganizationAction,
@@ -74,7 +77,7 @@ export default async function OrganizationPage() {
 
   const canManage = activeOrganization.role === 'owner' || activeOrganization.role === 'admin';
   const isOwner = activeOrganization.role === 'owner';
-  const [members, invitations, auditEvents, plan, usage] = await Promise.all([
+  const [members, invitations, auditEvents, plan, usage, licenses] = await Promise.all([
     db
       .select({
         id: organizationMembers.id,
@@ -83,6 +86,7 @@ export default async function OrganizationPage() {
         email: profiles.email,
         displayName: profiles.displayName,
         joinedAt: organizationMembers.createdAt,
+        licenseAssignedAt: organizationMembers.licenseAssignedAt,
       })
       .from(organizationMembers)
       .innerJoin(profiles, eq(profiles.id, organizationMembers.userId))
@@ -117,9 +121,11 @@ export default async function OrganizationPage() {
       .limit(20),
     getCurrentPlanInfo(db, profile.id),
     getUsageSummary(db, profile.id),
+    getLicenseSummary(db, activeOrganization.id),
   ]);
   const memberUsage = await getOrganizationMemberUsage(db, activeOrganization.id, plan.periodStart);
   const usageByUser = new Map(memberUsage.map((row) => [row.userId, row]));
+  const unlicensedMembers = members.filter((member) => !member.licenseAssignedAt);
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,11 +160,21 @@ export default async function OrganizationPage() {
         )}
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card><p className="text-sm text-ink-muted">Members</p><p className="text-2xl font-semibold text-ink">{members.length}</p></Card>
+        <Card>
+          <p className="text-sm text-ink-muted">Licenses assigned</p>
+          <p className="text-2xl font-semibold text-ink">{licenses.assigned} / {licenses.purchased}</p>
+        </Card>
         <Card><p className="text-sm text-ink-muted">Plan</p><p className="text-2xl font-semibold text-ink">{plan.planName}</p></Card>
         <Card><p className="text-sm text-ink-muted">Shared requests</p><p className="text-2xl font-semibold text-ink">{usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}</p></Card>
       </div>
+
+      {licenses.overBy > 0 && (
+        <Card className="text-sm text-amber-400">
+          {licenses.overBy} more {licenses.overBy === 1 ? 'member holds a license' : 'members hold licenses'} than the organization has purchased. Remove licenses below or buy more on the Billing page.
+        </Card>
+      )}
 
       {canManage && (
         <Card className="flex flex-col gap-4">
@@ -191,9 +207,47 @@ export default async function OrganizationPage() {
             return (
               <div key={member.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="font-medium text-ink">{member.displayName || member.email}</p>
+                  <p className="flex items-center gap-2 font-medium text-ink">
+                    {member.displayName || member.email}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-normal ${member.licenseAssignedAt ? 'bg-glow/20 text-ink' : 'bg-white/10 text-ink-muted'}`}>
+                      {member.licenseAssignedAt ? 'Licensed' : 'No license'}
+                    </span>
+                  </p>
                   <p className="text-sm text-ink-muted">{member.email} - {roleLabel(member.role)} - {memberUsageRow?.requests ?? 0} requests / {(memberUsageRow?.tokens ?? 0).toLocaleString()} tokens</p>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                {canManage && (member.licenseAssignedAt ? (
+                  <>
+                    <form action={removeLicenseAction}>
+                      <input type="hidden" name="organizationId" value={activeOrganization.id} />
+                      <input type="hidden" name="memberId" value={member.id} />
+                      <Button type="submit" variant="ghost">Remove license</Button>
+                    </form>
+                    {unlicensedMembers.length > 0 && (
+                      <form action={reassignLicenseAction} className="flex gap-2">
+                        <input type="hidden" name="organizationId" value={activeOrganization.id} />
+                        <input type="hidden" name="memberId" value={member.id} />
+                        <select name="toMemberId" aria-label="Move license to" className="rounded border border-line bg-surface px-2 text-sm text-ink">
+                          {unlicensedMembers.map((other) => <option key={other.id} value={other.id}>{other.displayName || other.email}</option>)}
+                        </select>
+                        <Button type="submit" variant="ghost">Move license</Button>
+                      </form>
+                    )}
+                  </>
+                ) : (
+                  <form action={assignLicenseAction}>
+                    <input type="hidden" name="organizationId" value={activeOrganization.id} />
+                    <input type="hidden" name="memberId" value={member.id} />
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={licenses.available < 1}
+                      title={licenses.available < 1 ? 'No licenses available. Buy more on the Billing page.' : undefined}
+                    >
+                      Assign license
+                    </Button>
+                  </form>
+                ))}
                 {editable && (
                   <div className="flex gap-2">
                     <form action={updateMemberRoleAction} className="flex gap-2">
@@ -220,6 +274,7 @@ export default async function OrganizationPage() {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             );
           })}

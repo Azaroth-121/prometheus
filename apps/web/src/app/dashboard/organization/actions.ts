@@ -10,6 +10,7 @@ import {
   requireOrganizationManager,
   requireOrganizationMember,
 } from '@prometheus/auth';
+import { assignLicense, reassignLicense, removeLicense } from '@prometheus/billing';
 import {
   adminAuditLogs,
   organizationInvitations,
@@ -405,5 +406,33 @@ export async function revokeInvitationAction(formData: FormData) {
       ipAddress: await requestIp(),
     });
   }
+  revalidatePath('/dashboard/organization');
+}
+
+export async function assignLicenseAction(formData: FormData) {
+  const actor = await requireActor();
+  const organizationId = String(formData.get('organizationId') ?? '');
+  const memberId = String(formData.get('memberId') ?? '');
+  await requireOrganizationManager(db, actor.id, organizationId);
+  await assignLicense(db, { organizationId, memberId, actorId: actor.id, ipAddress: await requestIp() });
+  revalidatePath('/dashboard/organization');
+}
+
+export async function removeLicenseAction(formData: FormData) {
+  const actor = await requireActor();
+  const organizationId = String(formData.get('organizationId') ?? '');
+  const memberId = String(formData.get('memberId') ?? '');
+  await requireOrganizationManager(db, actor.id, organizationId);
+  await removeLicense(db, { organizationId, memberId, actorId: actor.id, ipAddress: await requestIp() });
+  revalidatePath('/dashboard/organization');
+}
+
+export async function reassignLicenseAction(formData: FormData) {
+  const actor = await requireActor();
+  const organizationId = String(formData.get('organizationId') ?? '');
+  const fromMemberId = String(formData.get('memberId') ?? '');
+  const toMemberId = String(formData.get('toMemberId') ?? '');
+  await requireOrganizationManager(db, actor.id, organizationId);
+  await reassignLicense(db, { organizationId, fromMemberId, toMemberId, actorId: actor.id, ipAddress: await requestIp() });
   revalidatePath('/dashboard/organization');
 }
