@@ -1,6 +1,6 @@
 # ADR-004: Organization licenses (C.1)
 
-- **Status:** Proposed (draft for review)
+- **Status:** Proposed (draft for review). Implemented on branch `paul/c1-license-model`; see [Implementation](#implementation).
 - **Workstream:** C.1, seat-based billing
 - **Owner:** Paul. **Approver:** Kurt. Pricing questions go to Charles.
 - **Builds on:** [organizations.md](organizations.md) (E0, PR #6)
@@ -28,7 +28,7 @@ Membership answers "who belongs to this organization and what can they manage". 
 
 ### 2. Data model
 
-- `organization_subscriptions.seat_quantity integer not null default 1`: licenses **purchased**. Written only by the Stripe webhook from the subscription item's quantity. Stripe is the source of truth.
+- `organization_subscriptions.seat_quantity integer not null default 1`: licenses **purchased**. Always Stripe's value: written by the webhook from the subscription item's quantity, and by the change-licenses endpoint from Stripe's response. Stripe is the source of truth. An organization with no active paid subscription has 0 purchased.
 - `organization_members.license_assigned_at timestamptz null`: the member holds a license when this is set. The database is the source of truth for **assigned**.
 - **Available** = `seat_quantity` minus the count of members with a license. It is computed, never stored.
 - Every assign / remove / reassign writes an `admin_audit_logs` row with the organization id. No separate history table.
@@ -37,14 +37,14 @@ A column on `organization_members` is enough because a person holds at most one 
 
 ### 3. Rules
 
-- **Assign** (owner or admin): allowed only when available > 0. The count check and the update run in one transaction under the same advisory lock pattern as `withBillingScopeLock`, keyed on the organization id, so two admins cannot assign the last license at the same time.
+- **Assign** (owner or admin): allowed only when available > 0. The count check and the update run in one transaction under an advisory lock keyed on the organization (same pattern as `withBillingScopeLock`, separate key so license administration never waits on optimize traffic), so two admins cannot assign the last license at the same time.
 - **Remove** (owner or admin): clears `license_assigned_at`. The license returns to the pool immediately.
 - **Reassign:** remove plus assign in one transaction.
 - **Cap:** the database never allows assigned > purchased. If Stripe lowers the quantity below the assigned count (for example, a change made in the Stripe Dashboard), no one is unassigned automatically: new assignments are blocked and the admin console shows "over by N" until an admin removes licenses or buys more.
 
 ### 4. Using Prometheus without a license (recommended; needs approval)
 
-When the organization is active, `/api/v1/optimize` requires the caller to hold a license. Without one, the request is refused with a clear error ("Ask your admin for a license"), and the member can still switch to their Personal account and use their own plan. This is checked next to the existing usage check in the optimize route.
+When the organization is active and on a paid plan, `/api/v1/optimize` requires the caller to hold a license. Without one, the request is refused with `LICENSE_REQUIRED` and a clear message ("Ask an admin for one"), and the member can still switch to their Personal account and use their own plan. Organizations on Free have no licenses to assign, so they are not gated.
 
 ### 5. Usage limits per license
 
@@ -53,11 +53,12 @@ The organization keeps one shared pool, as today, sized by the number of purchas
 ### 6. Buying and changing licenses (Stripe)
 
 - **First purchase:** Checkout with the chosen quantity instead of 1. The quantity comes from the request, and the server validates it against the minimum and maximum.
-- **Adding licenses:** update the subscription item's quantity through the Stripe API with prorations. The new licenses are usable as soon as the webhook confirms the change.
-- **Reducing licenses:** applied at the next renewal, with no refund for the current period. The request is rejected if the new quantity is lower than the number of licenses currently assigned.
+- **Adding licenses:** Stripe invoices the prorated difference immediately and applies the new quantity only once that invoice is paid (`pending_if_incomplete`).
+- **Reducing licenses:** the count drops immediately with no refund or credit; the next renewal bills the lower count. The request is rejected if the new quantity is lower than the number of licenses currently assigned.
 - **Volume discounts:** handled by Stripe tiered pricing (volume mode) on the organization's Price, so the discount logic lives in Stripe and not in our code. Tier boundaries follow the priority list: 10 / 25 / 50 / 100+.
 - **Monthly vs annual:** one Price per interval. The `plans` table gains the annual Price id. Invoicing and NET-30 terms for annual contracts belong to C.2.
-- **Webhook:** `customer.subscription.created` / `updated` also stores the item quantity into `seat_quantity`.
+- **Webhook:** `checkout.session.completed` and `customer.subscription.updated` also store the item quantity into `seat_quantity`.
+- **No second subscription:** checkout refuses an organization that already has an active plan. It changes its license count or switches plan through Manage billing instead.
 
 ### 7. Existing organizations
 
@@ -70,6 +71,21 @@ Seat counts depend on the Stripe webhook being reliable, so the known webhook is
 1. Events marked `failed` are skipped on Stripe's retry, so a missed quantity update would never be applied.
 2. Checkout does not check for an existing active subscription. With licenses, a second checkout would create a second subscription with its own quantity.
 3. The handler reads subscription period fields from the event payload. On newer Stripe API versions these moved, so the handler should re-fetch the subscription (which also gives the current quantity).
+
+## Implementation
+
+| Piece | Where |
+|---|---|
+| Columns and backfill | `packages/database/drizzle/0007_add_organization_licenses.sql` |
+| Checkout quantity and bounds | `parseLicenseQuantity` in `packages/billing/src/licenses.ts`, `/api/billing/checkout` |
+| Assign / remove / reassign, summary, lock | `packages/billing/src/licenses.ts` |
+| Pool = plan limits x licenses | `getCurrentPlanInfo` in `packages/billing/src/access.ts` |
+| Quantity from Stripe | `/api/webhooks/stripe` |
+| Change license count with proration | `changeSubscriptionQuantity` in `packages/billing/src/client.ts`, `/api/billing/licenses` |
+| License gate | `/api/v1/optimize` |
+| Screens | `/dashboard/organization` (assign, remove, move), `/dashboard/billing` (counts, change count, per-license checkout) |
+
+Not done yet: annual Prices, volume tiers and minimums (need pricing decisions; Stripe Dashboard setup), and the webhook fixes under Prerequisites.
 
 ## Out of scope
 
