@@ -105,6 +105,45 @@ export async function createBillingPortalSession(
   });
 }
 
+export interface BillingInvoice {
+  id: string;
+  number: string | null;
+  createdAt: Date;
+  /** In the currency's minor unit, as Stripe reports it -- format with formatInvoiceAmount. */
+  total: number;
+  currency: string;
+  status: Stripe.Invoice.Status | null;
+  hostedInvoiceUrl: string | null;
+  pdfUrl: string | null;
+}
+
+/**
+ * The customer's recent invoices, newest first, for the billing page's history
+ * card (C.3). Drafts are left out: Stripe hasn't finalized or sent them yet.
+ */
+export async function listInvoices(stripe: Stripe, customerId: string, limit = 12): Promise<BillingInvoice[]> {
+  const invoices = await stripe.invoices.list({ customer: customerId, limit });
+  return invoices.data
+    .filter((invoice) => invoice.status !== 'draft')
+    .map((invoice) => ({
+      id: invoice.id,
+      number: invoice.number,
+      createdAt: new Date(invoice.created * 1000),
+      total: invoice.total,
+      currency: invoice.currency,
+      status: invoice.status,
+      hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+      pdfUrl: invoice.invoice_pdf ?? null,
+    }));
+}
+
+/** Formats a Stripe minor-unit amount, so 1999 USD is "$19.99" and 1999 JPY is "¥1,999". */
+export function formatInvoiceAmount(amount: number, currency: string): string {
+  const format = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() });
+  const fractionDigits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(amount / 10 ** fractionDigits);
+}
+
 /** Throws if the signature doesn't match -- same fail-closed contract the caller already expects. */
 export function constructWebhookEvent(
   stripe: Stripe,
