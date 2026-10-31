@@ -115,6 +115,8 @@ async function upsertSubscriptionFromStripe(sub: Stripe.Subscription): Promise<v
   const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
 
   if (sub.metadata.organizationId) {
+    // Licenses purchased (ADR-004): Stripe's quantity is the source of truth.
+    const seatQuantity = sub.items.data[0]?.quantity ?? 1;
     await db
       .insert(organizationSubscriptions)
       .values({
@@ -124,6 +126,7 @@ async function upsertSubscriptionFromStripe(sub: Stripe.Subscription): Promise<v
         providerSubscriptionId: sub.id,
         planId: plan.id,
         status: sub.status as SubscriptionStatus,
+        seatQuantity,
         currentPeriodStart: new Date(sub.current_period_start * 1000),
         currentPeriodEnd: new Date(sub.current_period_end * 1000),
         cancelAtPeriodEnd: sub.cancel_at_period_end,
@@ -133,6 +136,7 @@ async function upsertSubscriptionFromStripe(sub: Stripe.Subscription): Promise<v
         set: {
           planId: plan.id,
           status: sub.status as SubscriptionStatus,
+          seatQuantity,
           currentPeriodStart: new Date(sub.current_period_start * 1000),
           currentPeriodEnd: new Date(sub.current_period_end * 1000),
           cancelAtPeriodEnd: sub.cancel_at_period_end,
@@ -151,6 +155,7 @@ async function upsertSubscriptionFromStripe(sub: Stripe.Subscription): Promise<v
           afterState: {
             planId: plan.id,
             status: sub.status,
+            seatQuantity,
             currentPeriodEnd: new Date(sub.current_period_end * 1000).toISOString(),
             cancelAtPeriodEnd: sub.cancel_at_period_end,
           },
