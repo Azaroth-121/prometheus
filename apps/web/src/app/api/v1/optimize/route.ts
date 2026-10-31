@@ -10,7 +10,13 @@ import {
 } from '@prometheus/shared-types';
 import { requireRole, verifyAccessToken, toProfile } from '@prometheus/auth';
 import { profiles, optimizationRequests, systemEvents } from '@prometheus/database';
-import { checkUsageAgainstPlan, getCurrentPlanInfo } from '@prometheus/billing';
+import {
+  checkUsageAgainstPlan,
+  getCurrentPlanInfo,
+  withBillingScopeLock,
+  UsageLimitExceededError,
+  type UsageCheckResult,
+} from '@prometheus/billing';
 import { getActivePromptConfig, PROMETHEUS_OUTPUT_JSON_SCHEMA } from '@prometheus/prompts';
 import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { db } from '@/lib/db';
@@ -83,38 +89,55 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const usage = await checkUsageAgainstPlan(db, profile.id, planInfo);
-  if (!usage.allowed) {
-    return respondError(
-      requestId,
-      403,
-      'USAGE_LIMIT_REACHED',
-      usage.exceeded === 'tokens'
-        ? "Your plan's token allowance has been used for this period. Upgrade or wait for it to reset."
-        : 'Your optimization allowance has been used. Upgrade or wait for it to reset.'
-    );
-  }
-
   const config = await getActivePromptConfig(db, body.mode);
   if (!config) {
     await logSystemEvent(requestId, 'error', 'prompt_config_missing', `No published prompt_configs row for mode "${body.mode}".`);
     return respondError(requestId, 500, 'UPSTREAM_ERROR', 'The optimization service is temporarily unavailable.');
   }
 
+  // The usage check and the row that "spends" it must happen inside the
+  // same lock, or concurrent requests can all read the same pre-insert
+  // count and all pass (see ADR/B.1 security review). Organization-scoped
+  // billing makes this worse than it already was: an org's shared pool is
+  // contended by every member firing requests, not just one user's own
+  // parallel calls -- so the lock key is the org id when there's an active
+  // organization, falling back to the user id for individual billing.
+  const usageLockKey = planInfo.organizationId ?? profile.id;
+
+  let usage: UsageCheckResult;
   try {
-    await db.insert(optimizationRequests).values({
-      id: requestId,
-      userId: profile.id,
-      organizationId: planInfo.organizationId,
-      clientRequestId: body.client_request_id,
-      source: body.source,
-      mode: body.mode,
-      promptVersion: `${config.name}:${config.version}`,
-      model: config.model,
-      status: 'pending',
-      inputCharacterCount: body.input.length,
+    usage = await withBillingScopeLock(db, usageLockKey, async (tx) => {
+      const result = await checkUsageAgainstPlan(tx, profile.id, planInfo);
+      if (!result.allowed) {
+        throw new UsageLimitExceededError(result);
+      }
+
+      await tx.insert(optimizationRequests).values({
+        id: requestId,
+        userId: profile.id,
+        organizationId: planInfo.organizationId,
+        clientRequestId: body.client_request_id,
+        source: body.source,
+        mode: body.mode,
+        promptVersion: `${config.name}:${config.version}`,
+        model: config.model,
+        status: 'pending',
+        inputCharacterCount: body.input.length,
+      });
+
+      return result;
     });
   } catch (err) {
+    if (err instanceof UsageLimitExceededError) {
+      return respondError(
+        requestId,
+        403,
+        'USAGE_LIMIT_REACHED',
+        err.result.exceeded === 'tokens'
+          ? "Your plan's token allowance has been used for this period. Upgrade or wait for it to reset."
+          : 'Your optimization allowance has been used. Upgrade or wait for it to reset.'
+      );
+    }
     // 23505 = unique_violation (user_id, client_request_id) -- same
     // idempotency key already submitted.
     if (isPgUniqueViolation(err)) {
