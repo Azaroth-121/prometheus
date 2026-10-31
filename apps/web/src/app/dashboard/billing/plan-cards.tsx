@@ -32,6 +32,8 @@ export function PlanCards({
   const [loadingCode, setLoadingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(String(licenses?.min ?? 1));
+  const licenseCount = Number(quantity);
+  const totalFor = licenses && Number.isInteger(licenseCount) && licenseCount > 1 ? licenseCount : null;
 
   async function handlePay(planCode: string) {
     setLoadingCode(planCode);
@@ -59,7 +61,7 @@ export function PlanCards({
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-red-400">{error}</p>}
       {licenses && (
-        <label className="flex items-center gap-3 text-sm text-ink-muted">
+        <label className="flex flex-wrap items-center gap-3 text-sm text-ink-muted">
           Licenses
           <span className="block w-28">
             <Input
@@ -86,6 +88,11 @@ export function PlanCards({
             <p className="text-sm text-ink-muted">
               {plan.requestLimit.toLocaleString()} optimizations / month{licenses ? ' per license' : ''}
             </p>
+            {totalFor !== null && (
+              <p className="text-sm text-ink">
+                ${(plan.price * totalFor).toLocaleString()} / month for {totalFor} licenses
+              </p>
+            )}
             <Button onClick={() => handlePay(plan.code)} disabled={disabled || loadingCode !== null}>
               {loadingCode === plan.code ? 'Redirecting…' : `Subscribe to ${plan.name}`}
             </Button>

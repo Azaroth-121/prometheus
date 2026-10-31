@@ -24,7 +24,7 @@ export function parseLicenseQuantity(value: unknown, scope: 'individual' | 'orga
   }
 
   if (typeof value !== 'number' || !Number.isInteger(value)) {
-    return { ok: false, error: '"quantity" must be a whole number.' };
+    return { ok: false, error: 'Enter a whole number of licenses.' };
   }
 
   if (scope === 'individual') {
@@ -34,7 +34,7 @@ export function parseLicenseQuantity(value: unknown, scope: 'individual' | 'orga
   if (value < ORGANIZATION_LICENSE_MIN || value > ORGANIZATION_LICENSE_MAX) {
     return {
       ok: false,
-      error: `"quantity" must be between ${ORGANIZATION_LICENSE_MIN} and ${ORGANIZATION_LICENSE_MAX}.`,
+      error: `Choose between ${ORGANIZATION_LICENSE_MIN} and ${ORGANIZATION_LICENSE_MAX.toLocaleString('en-US')} licenses.`,
     };
   }
 

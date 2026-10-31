@@ -296,8 +296,8 @@ export default async function OrganizationPage() {
       <Card className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-ink">Audit log</h2>
         {auditEvents.map((event) => (
-          <div key={event.id} className="flex justify-between gap-4 border-t border-line pt-3 text-sm">
-            <div><p className="text-ink">{event.action.replaceAll('_', ' ')}</p><p className="text-ink-muted">{event.actorEmail} - {event.targetType}</p></div>
+          <div key={event.id} className="flex flex-col gap-1 border-t border-line pt-3 text-sm sm:flex-row sm:justify-between sm:gap-4">
+            <div className="min-w-0"><p className="text-ink">{event.action.replaceAll('_', ' ')}</p><p className="break-words text-ink-muted">{event.actorEmail} - {event.targetType}</p></div>
             <time className="shrink-0 text-ink-muted">{event.createdAt.toLocaleString()}</time>
           </div>
         ))}
