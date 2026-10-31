@@ -1,3 +1,5 @@
+import { Suspense } from 'react';
+import { desc, eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { getActiveOrganization, getCurrentProfile } from '@prometheus/auth';
 import {
@@ -6,9 +8,11 @@ import {
   ORGANIZATION_LICENSE_MAX,
   ORGANIZATION_LICENSE_MIN,
 } from '@prometheus/billing';
+import { organizationSubscriptions, subscriptions } from '@prometheus/database';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
 import { UsageCard } from '../usage-card';
+import { BillingHistory, BillingHistoryLoading } from './billing-history';
 import { LicenseCountForm } from './license-count-form';
 import { ManageBillingButton } from './manage-billing-button';
 import { PlanCards } from './plan-cards';
@@ -24,6 +28,24 @@ export default async function BillingPage() {
   // An organization that already pays changes its license count or plan
   // instead of starting a second subscription.
   const hasOrganizationSubscription = Boolean(licenses?.providerSubscriptionId);
+  // Same customer lookup as the billing portal route: the latest subscription
+  // in this billing scope, active or not, so past invoices stay visible.
+  const [billingCustomer] =
+    profile && canManageBilling
+      ? activeOrganization
+        ? await db
+            .select({ id: organizationSubscriptions.providerCustomerId })
+            .from(organizationSubscriptions)
+            .where(eq(organizationSubscriptions.organizationId, activeOrganization.id))
+            .orderBy(desc(organizationSubscriptions.createdAt))
+            .limit(1)
+        : await db
+            .select({ id: subscriptions.providerCustomerId })
+            .from(subscriptions)
+            .where(eq(subscriptions.userId, profile.id))
+            .orderBy(desc(subscriptions.createdAt))
+            .limit(1)
+      : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,6 +85,11 @@ export default async function BillingPage() {
         </Card>
       )}
       {profile && <UsageCard userId={profile.id} />}
+      {billingCustomer && (
+        <Suspense fallback={<BillingHistoryLoading />}>
+          <BillingHistory customerId={billingCustomer.id} />
+        </Suspense>
+      )}
       {!hasOrganizationSubscription && (
         <PlanCards
           disabled={!canManageBilling}
