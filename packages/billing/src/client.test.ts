@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Stripe from 'stripe';
-import { constructWebhookEvent, createStripeClient } from './client';
+import { constructWebhookEvent, createCheckoutSession, createStripeClient } from './client';
 
 const SECRET = 'whsec_test_secret';
 
@@ -34,5 +34,38 @@ describe('constructWebhookEvent', () => {
     const header = stripe.webhooks.generateTestHeaderString({ payload, secret: 'whsec_a_different_secret' });
 
     expect(() => constructWebhookEvent(stripe, payload, header, SECRET)).toThrow(Stripe.errors.StripeSignatureVerificationError);
+  });
+});
+
+describe('createCheckoutSession', () => {
+  function stubStripe() {
+    const create = vi.fn().mockResolvedValue({ id: 'cs_test_1' });
+    return { stripe: { checkout: { sessions: { create } } } as unknown as Stripe, create };
+  }
+
+  const baseInput = {
+    customerId: null,
+    customerEmail: 'owner@example.com',
+    userId: 'user_1',
+    organizationId: 'org_1',
+    priceId: 'price_1',
+    successUrl: 'https://app.test/success',
+    cancelUrl: 'https://app.test/cancel',
+  };
+
+  it('buys the requested number of licenses', async () => {
+    const { stripe, create } = stubStripe();
+
+    await createCheckoutSession(stripe, { ...baseInput, quantity: 25 });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ line_items: [{ price: 'price_1', quantity: 25 }] }));
+  });
+
+  it('defaults to a single license', async () => {
+    const { stripe, create } = stubStripe();
+
+    await createCheckoutSession(stripe, baseInput);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ line_items: [{ price: 'price_1', quantity: 1 }] }));
   });
 });

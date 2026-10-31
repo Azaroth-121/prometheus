@@ -23,6 +23,8 @@ export interface CreateCheckoutSessionInput {
   /** Present when this subscription belongs to an organization rather than the individual. */
   organizationId?: string | null;
   priceId: string;
+  /** Licenses to buy (ADR-004). Validate with parseLicenseQuantity first; defaults to 1. */
+  quantity?: number;
   successUrl: string;
   cancelUrl: string;
 }
@@ -33,7 +35,7 @@ export async function createCheckoutSession(
 ): Promise<Stripe.Checkout.Session> {
   return stripe.checkout.sessions.create({
     mode: 'subscription',
-    line_items: [{ price: input.priceId, quantity: 1 }],
+    line_items: [{ price: input.priceId, quantity: input.quantity ?? 1 }],
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     subscription_data: {

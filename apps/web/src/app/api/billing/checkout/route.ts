@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { desc, eq } from 'drizzle-orm';
 import { getActiveOrganization, getCurrentProfile, requireOrganizationBillingManager } from '@prometheus/auth';
 import { organizationSubscriptions, plans, subscriptions } from '@prometheus/database';
-import { createCheckoutSession, createStripeClient } from '@prometheus/billing';
+import { createCheckoutSession, createStripeClient, parseLicenseQuantity } from '@prometheus/billing';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
-  let body: { planCode?: string };
+  let body: { planCode?: string; quantity?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -39,6 +39,11 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Only the organization owner or billing manager can change this plan.' }, { status: 403 });
     }
+  }
+
+  const licenses = parseLicenseQuantity(body.quantity, activeOrganization ? 'organization' : 'individual');
+  if (!licenses.ok) {
+    return NextResponse.json({ error: licenses.error }, { status: 400 });
   }
 
   // Reuse the same Stripe Customer across purchases/upgrades instead of
@@ -66,6 +71,7 @@ export async function POST(request: NextRequest) {
       userId: profile.id,
       organizationId: activeOrganization?.id ?? null,
       priceId: plan.providerPlanId,
+      quantity: licenses.quantity,
       successUrl: `${env.appUrl}/dashboard/billing/success`,
       cancelUrl: `${env.appUrl}/dashboard/billing`,
     });
