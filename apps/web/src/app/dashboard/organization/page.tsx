@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -165,6 +166,15 @@ export default async function OrganizationPage() {
         <Card>
           <p className="text-sm text-ink-muted">Licenses assigned</p>
           <p className="text-2xl font-semibold text-ink">{licenses.assigned} / {licenses.purchased}</p>
+          <p className="text-xs text-ink-muted">
+            {licenses.purchased === 0 ? (
+              <>Subscribe on <Link href="/dashboard/billing" className="text-glow-cyan hover:underline">Billing</Link> to get licenses.</>
+            ) : licenses.available === 0 ? (
+              <>None available. Buy more on <Link href="/dashboard/billing" className="text-glow-cyan hover:underline">Billing</Link>.</>
+            ) : (
+              `${licenses.available} available`
+            )}
+          </p>
         </Card>
         <Card><p className="text-sm text-ink-muted">Plan</p><p className="text-2xl font-semibold text-ink">{plan.planName}</p></Card>
         <Card><p className="text-sm text-ink-muted">Shared requests</p><p className="text-2xl font-semibold text-ink">{usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}</p></Card>
@@ -215,41 +225,43 @@ export default async function OrganizationPage() {
                   </p>
                   <p className="text-sm text-ink-muted">{member.email} - {roleLabel(member.role)} - {memberUsageRow?.requests ?? 0} requests / {(memberUsageRow?.tokens ?? 0).toLocaleString()} tokens</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                {canManage && (member.licenseAssignedAt ? (
-                  <>
-                    <form action={removeLicenseAction}>
-                      <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                      <input type="hidden" name="memberId" value={member.id} />
-                      <Button type="submit" variant="ghost">Remove license</Button>
-                    </form>
-                    {unlicensedMembers.length > 0 && (
-                      <form action={reassignLicenseAction} className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:items-end">
+                {canManage && (
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="text-xs uppercase tracking-wide text-ink-muted">License</span>
+                    {member.licenseAssignedAt ? (
+                      <>
+                        <form action={removeLicenseAction}>
+                          <input type="hidden" name="organizationId" value={activeOrganization.id} />
+                          <input type="hidden" name="memberId" value={member.id} />
+                          <Button type="submit" variant="ghost">Remove</Button>
+                        </form>
+                        {unlicensedMembers.length > 0 && (
+                          <form action={reassignLicenseAction} className="flex gap-2">
+                            <input type="hidden" name="organizationId" value={activeOrganization.id} />
+                            <input type="hidden" name="memberId" value={member.id} />
+                            <select name="toMemberId" defaultValue="" required aria-label="Move license to" className="rounded border border-line bg-surface px-2 text-sm text-ink">
+                              <option value="" disabled>Move to...</option>
+                              {unlicensedMembers.map((other) => <option key={other.id} value={other.id}>{other.displayName || other.email}</option>)}
+                            </select>
+                            <Button type="submit" variant="ghost">Move</Button>
+                          </form>
+                        )}
+                      </>
+                    ) : (
+                      <form action={assignLicenseAction}>
                         <input type="hidden" name="organizationId" value={activeOrganization.id} />
                         <input type="hidden" name="memberId" value={member.id} />
-                        <select name="toMemberId" aria-label="Move license to" className="rounded border border-line bg-surface px-2 text-sm text-ink">
-                          {unlicensedMembers.map((other) => <option key={other.id} value={other.id}>{other.displayName || other.email}</option>)}
-                        </select>
-                        <Button type="submit" variant="ghost">Move license</Button>
+                        <Button type="submit" variant="secondary" disabled={licenses.available < 1}>
+                          Assign
+                        </Button>
                       </form>
                     )}
-                  </>
-                ) : (
-                  <form action={assignLicenseAction}>
-                    <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                    <input type="hidden" name="memberId" value={member.id} />
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      disabled={licenses.available < 1}
-                      title={licenses.available < 1 ? 'No licenses available. Buy more on the Billing page.' : undefined}
-                    >
-                      Assign license
-                    </Button>
-                  </form>
-                ))}
+                  </div>
+                )}
                 {editable && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="text-xs uppercase tracking-wide text-ink-muted">Member</span>
                     <form action={updateMemberRoleAction} className="flex gap-2">
                       <input type="hidden" name="organizationId" value={activeOrganization.id} />
                       <input type="hidden" name="memberId" value={member.id} />
