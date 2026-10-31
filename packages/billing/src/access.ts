@@ -12,10 +12,10 @@ import {
 import type { UsageSummary } from '@prometheus/shared-types';
 
 /** The type Drizzle hands a transaction callback -- derived from `transaction`'s own signature rather than guessed, so it can't drift from whatever Drizzle actually passes. */
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /** checkUsageAgainstPlan/getPeriodUsage run both standalone (tests, getUsageSummary) and inside withBillingScopeLock's transaction. */
-type Queryable = Database | Transaction;
+export type Queryable = Database | Transaction;
 
 export interface BillingScope {
   type: 'individual' | 'organization';
@@ -33,6 +33,12 @@ export interface CurrentPlanInfo extends BillingScope {
   maximumInputLength: number;
   /** Start of the current usage-counting window. */
   periodStart: string;
+  /**
+   * Licenses purchased on the organization's paid subscription (ADR-004).
+   * null for individual plans and for organizations on Free, which have no
+   * licenses to assign.
+   */
+  licensedSeats: number | null;
 }
 
 const USAGE_WINDOW_DAYS = 30;
@@ -73,6 +79,7 @@ async function getFreePlanInfo(db: Database, scope: BillingScope): Promise<Curre
     monthlyTokenLimit: plan?.monthlyTokenLimit ?? 50_000,
     maximumInputLength: plan?.maximumInputLength ?? 2000,
     periodStart: periodStart.toISOString(),
+    licensedSeats: null,
   };
 }
 
@@ -86,6 +93,7 @@ export async function getCurrentPlanInfo(db: Database, userId: string): Promise<
           currentPeriodStart: organizationSubscriptions.currentPeriodStart,
           currentPeriodEnd: organizationSubscriptions.currentPeriodEnd,
           planId: organizationSubscriptions.planId,
+          seatQuantity: organizationSubscriptions.seatQuantity,
         })
         .from(organizationSubscriptions)
         .where(
@@ -101,6 +109,7 @@ export async function getCurrentPlanInfo(db: Database, userId: string): Promise<
           currentPeriodStart: subscriptions.currentPeriodStart,
           currentPeriodEnd: subscriptions.currentPeriodEnd,
           planId: subscriptions.planId,
+          seatQuantity: sql<number | null>`null`,
         })
         .from(subscriptions)
         .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, 'active')))
@@ -114,15 +123,21 @@ export async function getCurrentPlanInfo(db: Database, userId: string): Promise<
   const [plan] = await db.select().from(plans).where(eq(plans.id, subscription.planId)).limit(1);
   if (!plan) return getFreePlanInfo(db, scope);
 
+  // An organization's shared pool scales with the licenses it bought: the
+  // plan's limits are per license (ADR-004).
+  const licensedSeats = subscription.seatQuantity;
+  const multiplier = licensedSeats ?? 1;
+
   return {
     ...scope,
     planCode: plan.code,
     planName: plan.name,
     expiresAt: subscription.currentPeriodEnd.toISOString(),
-    monthlyRequestLimit: plan.monthlyRequestLimit,
-    monthlyTokenLimit: plan.monthlyTokenLimit,
+    monthlyRequestLimit: plan.monthlyRequestLimit * multiplier,
+    monthlyTokenLimit: plan.monthlyTokenLimit * multiplier,
     maximumInputLength: plan.maximumInputLength,
     periodStart: subscription.currentPeriodStart.toISOString(),
+    licensedSeats,
   };
 }
 

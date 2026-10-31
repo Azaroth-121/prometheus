@@ -13,6 +13,7 @@ import { profiles, optimizationRequests, systemEvents } from '@prometheus/databa
 import {
   checkUsageAgainstPlan,
   getCurrentPlanInfo,
+  hasOrganizationLicense,
   withBillingScopeLock,
   UsageLimitExceededError,
   type UsageCheckResult,
@@ -79,6 +80,22 @@ export async function POST(request: NextRequest) {
   }
 
   const planInfo = await getCurrentPlanInfo(db, profile.id);
+
+  // Paid organization plans are licensed per person (ADR-004): only members
+  // holding one of the organization's licenses spend its shared pool. Free
+  // organizations have no licenses to assign, so they aren't gated.
+  if (
+    planInfo.organizationId &&
+    planInfo.licensedSeats !== null &&
+    !(await hasOrganizationLicense(db, planInfo.organizationId, profile.id))
+  ) {
+    return respondError(
+      requestId,
+      403,
+      'LICENSE_REQUIRED',
+      `${planInfo.organizationName ?? 'Your organization'} hasn't given you a license yet. Ask an admin for one, or switch to your personal account.`
+    );
+  }
 
   if (body.input.length > planInfo.maximumInputLength) {
     return respondError(
