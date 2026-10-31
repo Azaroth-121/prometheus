@@ -47,6 +47,48 @@ export async function createCheckoutSession(
   });
 }
 
+export interface ChangeSubscriptionQuantityResult {
+  /** The quantity Stripe now bills for. Unchanged while an increase awaits payment. */
+  quantity: number;
+  /** True when an increase is waiting on its prorated invoice being paid. */
+  pendingPayment: boolean;
+}
+
+/**
+ * Changes how many licenses an organization subscription bills for (ADR-004).
+ * Adding licenses invoices the prorated difference immediately, and Stripe
+ * only applies the new quantity once that invoice is paid. Removing licenses
+ * takes effect now with no credit; the next renewal bills the lower count.
+ */
+export async function changeSubscriptionQuantity(
+  stripe: Stripe,
+  subscriptionId: string,
+  quantity: number
+): Promise<ChangeSubscriptionQuantityResult> {
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const item = subscription.items.data[0];
+  if (!item) throw new Error(`Stripe subscription ${subscriptionId} has no items.`);
+
+  const current = item.quantity ?? 1;
+  if (quantity === current) return { quantity, pendingPayment: false };
+
+  const updated = await stripe.subscriptions.update(
+    subscriptionId,
+    quantity > current
+      ? {
+          items: [{ id: item.id, quantity }],
+          proration_behavior: 'always_invoice',
+          payment_behavior: 'pending_if_incomplete',
+        }
+      : { items: [{ id: item.id, quantity }], proration_behavior: 'none' }
+  );
+
+  return {
+    quantity: updated.items.data[0]?.quantity ?? current,
+    pendingPayment: Boolean(updated.pending_update),
+  };
+}
+
 export interface CreateBillingPortalSessionInput {
   customerId: string;
   returnUrl: string;

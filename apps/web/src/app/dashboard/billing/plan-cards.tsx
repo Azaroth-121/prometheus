@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card } from '@prometheus/ui';
+import { Button, Card, Input } from '@prometheus/ui';
 
 interface PlanOption {
   code: string;
@@ -18,9 +18,20 @@ const PLAN_OPTIONS: PlanOption[] = [
   { code: 'enterprise', name: 'Enterprise', price: 100, requestLimit: 5000 },
 ];
 
-export function PlanCards({ disabled = false }: { disabled?: boolean }) {
+/**
+ * `licenses` turns on organization checkout: prices are per license and the
+ * buyer picks how many licenses to buy (ADR-004).
+ */
+export function PlanCards({
+  disabled = false,
+  licenses,
+}: {
+  disabled?: boolean;
+  licenses?: { min: number; max: number };
+}) {
   const [loadingCode, setLoadingCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState(String(licenses?.min ?? 1));
 
   async function handlePay(planCode: string) {
     setLoadingCode(planCode);
@@ -29,7 +40,7 @@ export function PlanCards({ disabled = false }: { disabled?: boolean }) {
       const response = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planCode }),
+        body: JSON.stringify(licenses ? { planCode, quantity: Number(quantity) } : { planCode }),
       });
       const data = await response.json();
       if (!response.ok || !data.checkout_url) {
@@ -47,16 +58,33 @@ export function PlanCards({ disabled = false }: { disabled?: boolean }) {
   return (
     <div className="flex flex-col gap-4">
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {licenses && (
+        <label className="flex items-center gap-3 text-sm text-ink-muted">
+          Licenses
+          <span className="block w-28">
+            <Input
+              type="number"
+              min={licenses.min}
+              max={licenses.max}
+              step={1}
+              value={quantity}
+              onChange={(event) => setQuantity(event.target.value)}
+              disabled={disabled}
+            />
+          </span>
+          <span>One license per person who uses Prometheus.</span>
+        </label>
+      )}
       <div className="grid gap-4 sm:grid-cols-3">
         {PLAN_OPTIONS.map((plan) => (
           <Card key={plan.code} className="flex flex-col gap-3 hover:border-glow/60 hover:shadow-glow-sm">
             <h2 className="font-display text-lg font-semibold text-ink">{plan.name}</h2>
             <p className="text-3xl font-bold text-ink">
               ${plan.price}
-              <span className="text-sm font-normal text-ink-muted"> / month</span>
+              <span className="text-sm font-normal text-ink-muted">{licenses ? ' / license / month' : ' / month'}</span>
             </p>
             <p className="text-sm text-ink-muted">
-              {plan.requestLimit.toLocaleString()} optimizations / month
+              {plan.requestLimit.toLocaleString()} optimizations / month{licenses ? ' per license' : ''}
             </p>
             <Button onClick={() => handlePay(plan.code)} disabled={disabled || loadingCode !== null}>
               {loadingCode === plan.code ? 'Redirecting…' : `Subscribe to ${plan.name}`}

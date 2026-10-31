@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import Stripe from 'stripe';
-import { constructWebhookEvent, createCheckoutSession, createStripeClient } from './client';
+import { changeSubscriptionQuantity, constructWebhookEvent, createCheckoutSession, createStripeClient } from './client';
 
 const SECRET = 'whsec_test_secret';
 
@@ -67,5 +67,51 @@ describe('createCheckoutSession', () => {
     await createCheckoutSession(stripe, baseInput);
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ line_items: [{ price: 'price_1', quantity: 1 }] }));
+  });
+});
+
+describe('changeSubscriptionQuantity', () => {
+  function stubStripe(currentQuantity: number, updated: { quantity: number; pending?: boolean }) {
+    const retrieve = vi.fn().mockResolvedValue({ items: { data: [{ id: 'si_1', quantity: currentQuantity }] } });
+    const update = vi.fn().mockResolvedValue({
+      items: { data: [{ id: 'si_1', quantity: updated.quantity }] },
+      pending_update: updated.pending ? { expires_at: 0 } : null,
+    });
+    return { stripe: { subscriptions: { retrieve, update } } as unknown as Stripe, update };
+  }
+
+  it('invoices the prorated difference when adding licenses', async () => {
+    const { stripe, update } = stubStripe(10, { quantity: 15 });
+
+    const result = await changeSubscriptionQuantity(stripe, 'sub_1', 15);
+
+    expect(update).toHaveBeenCalledWith('sub_1', {
+      items: [{ id: 'si_1', quantity: 15 }],
+      proration_behavior: 'always_invoice',
+      payment_behavior: 'pending_if_incomplete',
+    });
+    expect(result).toEqual({ quantity: 15, pendingPayment: false });
+  });
+
+  it('keeps the current quantity while an increase waits on payment', async () => {
+    const { stripe } = stubStripe(10, { quantity: 10, pending: true });
+
+    expect(await changeSubscriptionQuantity(stripe, 'sub_1', 15)).toEqual({ quantity: 10, pendingPayment: true });
+  });
+
+  it('removes licenses without a credit', async () => {
+    const { stripe, update } = stubStripe(10, { quantity: 6 });
+
+    await changeSubscriptionQuantity(stripe, 'sub_1', 6);
+
+    expect(update).toHaveBeenCalledWith('sub_1', { items: [{ id: 'si_1', quantity: 6 }], proration_behavior: 'none' });
+  });
+
+  it('does not call Stripe when the quantity is unchanged', async () => {
+    const { stripe, update } = stubStripe(10, { quantity: 10 });
+
+    await changeSubscriptionQuantity(stripe, 'sub_1', 10);
+
+    expect(update).not.toHaveBeenCalled();
   });
 });
