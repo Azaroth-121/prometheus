@@ -29,9 +29,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </Link>
             {session?.user?.id && <OrgSwitcher organization={activeOrganization} />}
           </div>
-          <div className="flex items-center gap-4">
+          {/* Below lg the nav and Sign out take their own full-width row and
+              the nav links wrap, so the header never overflows a phone
+              screen; from lg they sit on the right of the logo as before. */}
+          <div className="flex w-full items-start justify-between gap-4 lg:w-auto lg:items-center">
             <DashboardNav />
-            <SignOutButton />
+            <div className="shrink-0">
+              <SignOutButton />
+            </div>
           </div>
         </div>
       </header>
