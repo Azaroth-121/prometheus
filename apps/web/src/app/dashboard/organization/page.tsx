@@ -25,6 +25,7 @@ import {
   updateMemberRoleAction,
 } from './actions';
 import { InviteMemberForm } from './invite-member-form';
+import { UsageWarning } from '../usage-warning';
 
 function roleLabel(role: string) {
   return role.charAt(0).toUpperCase() + role.slice(1);
@@ -179,6 +180,8 @@ export default async function OrganizationPage() {
         <Card><p className="text-sm text-ink-muted">Plan</p><p className="text-2xl font-semibold text-ink">{plan.planName}</p></Card>
         <Card><p className="text-sm text-ink-muted">Shared requests</p><p className="text-2xl font-semibold text-ink">{usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}</p></Card>
       </div>
+
+      <UsageWarning usage={usage} />
 
       {licenses.overBy > 0 && (
         <Card className="text-sm text-amber-400">
