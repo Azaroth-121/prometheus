@@ -5,6 +5,7 @@ import {
   timestamp,
   boolean,
   integer,
+  smallint,
   numeric,
   jsonb,
   inet,
@@ -197,6 +198,32 @@ export const organizationSubscriptions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
   },
   (table) => [index('organization_subscriptions_organization_id_idx').on(table.organizationId)]
+);
+
+// ---------------------------------------------------------------------------
+// organization_usage_alerts
+//
+// One row per 80% / 100% usage alert (C.5). A row counts as "already
+// alerted" for the rest of the usage period while the pool is the same
+// size -- see packages/billing's usage-alerts.ts.
+// ---------------------------------------------------------------------------
+export const organizationUsageAlerts = pgTable(
+  'organization_usage_alerts',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    threshold: smallint('threshold').notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    requestsUsed: integer('requests_used').notNull(),
+    requestsLimit: integer('requests_limit').notNull(),
+    tokensUsed: integer('tokens_used').notNull(),
+    tokensLimit: integer('tokens_limit').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
+  },
+  (table) => [index('organization_usage_alerts_organization_id_idx').on(table.organizationId, table.createdAt.desc())]
 );
 
 // ---------------------------------------------------------------------------

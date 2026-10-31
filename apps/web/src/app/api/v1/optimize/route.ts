@@ -16,12 +16,14 @@ import {
   hasOrganizationLicense,
   withBillingScopeLock,
   UsageLimitExceededError,
+  type CurrentPlanInfo,
   type UsageCheckResult,
 } from '@prometheus/billing';
 import { getActivePromptConfig, PROMETHEUS_OUTPUT_JSON_SCHEMA } from '@prometheus/prompts';
 import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
+import { sendUsageAlertIfNeeded } from '@/lib/usage-alerts';
 
 // Approximate gpt-4o-mini rates — validate against current OpenAI pricing before relying on this for real billing.
 const PRICE_PER_1K_INPUT_TOKENS = 0.00015;
@@ -146,14 +148,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     if (err instanceof UsageLimitExceededError) {
-      return respondError(
-        requestId,
-        403,
-        'USAGE_LIMIT_REACHED',
-        err.result.exceeded === 'tokens'
-          ? "Your plan's token allowance has been used for this period. Upgrade or wait for it to reset."
-          : 'Your optimization allowance has been used. Upgrade or wait for it to reset.'
-      );
+      // Normally already sent by the request that reached 100%; this catches
+      // the case where that request failed upstream.
+      await sendUsageAlertIfNeeded(planInfo, { requests: err.result.requestsUsed, tokens: err.result.tokensUsed });
+      return respondError(requestId, 403, 'USAGE_LIMIT_REACHED', usageLimitMessage(planInfo, err.result));
     }
     // 23505 = unique_violation (user_id, client_request_id) -- same
     // idempotency key already submitted.
@@ -220,12 +218,28 @@ export async function POST(request: NextRequest) {
     })
     .where(eq(optimizationRequests.id, requestId));
 
+  await sendUsageAlertIfNeeded(planInfo, {
+    requests: usage.requestsUsed + 1,
+    tokens: usage.tokensUsed + (inputTokens ?? 0) + (outputTokens ?? 0),
+  });
+
   return NextResponse.json<OptimizeSuccessResponse>({
     request_id: requestId,
     optimized_prompt: output.improved_prompt,
     upgrade_notes: output.upgrade_notes,
     usage: { remaining_requests: Math.max(usage.remainingRequests - 1, 0) },
   });
+}
+
+/** Organization members can't upgrade the shared plan themselves, so they're pointed at whoever can. */
+function usageLimitMessage(planInfo: CurrentPlanInfo, result: UsageCheckResult): string {
+  const allowance = result.exceeded === 'tokens' ? 'token allowance' : 'optimization allowance';
+  if (planInfo.organizationId) {
+    return `${planInfo.organizationName ?? 'Your organization'}'s shared ${allowance} has been used for this period. Ask an owner or billing manager to add licenses or upgrade, or wait for it to reset.`;
+  }
+  return result.exceeded === 'tokens'
+    ? "Your plan's token allowance has been used for this period. Upgrade or wait for it to reset."
+    : 'Your optimization allowance has been used. Upgrade or wait for it to reset.';
 }
 
 function isPgUniqueViolation(err: unknown): boolean {
