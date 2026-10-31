@@ -22,8 +22,9 @@ Personal (individual) plans get the banner but no email.
   The email goes out as the line is crossed, not from the daily cron, which is off until the
   Cloudflare cutover.
 - `organization_usage_alerts` (migration `0008`) records each alert. A threshold isn't sent
-  again while a row for it (or a higher one) exists since the usage period started: the Stripe
-  billing period for paid plans, a rolling 30 days on Free.
+  again while a row for it (or a higher one) exists since the usage period started (the Stripe
+  billing period for paid plans, a rolling 30 days on Free) for a pool of the same size. Buying
+  more licenses makes a new pool, so it can be alerted again when that fills up.
 - A send that fails for every recipient is deleted, so the next request retries it. If
   `MAKE_USAGE_ALERT_WEBHOOK_URL` isn't set the alert is recorded without an email and a
   warning goes to `system_events` (service `usage_alerts`).

@@ -71,8 +71,14 @@ describe('organization usage alert claims', () => {
 
   const periodStart = () => new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  function claim(organizationId: string, threshold: UsageAlertThreshold, start = periodStart()) {
-    return claimUsageAlert(db, { organizationId, threshold, periodStart: start, used: { requests: 800, tokens: 0 } });
+  function claim(organizationId: string, threshold: UsageAlertThreshold, requestLimit = 1000) {
+    return claimUsageAlert(db, {
+      organizationId,
+      threshold,
+      periodStart: periodStart(),
+      used: { requests: requestLimit * (threshold / 100), tokens: 0 },
+      limits: { requests: requestLimit, tokens: 2_000_000 },
+    });
   }
 
   it('claims each threshold once per period', async () => {
@@ -101,6 +107,16 @@ describe('organization usage alert claims', () => {
       .where(eq(organizationUsageAlerts.id, alertId!));
 
     expect(await claim(organizationId, 80)).toEqual(expect.any(String));
+  });
+
+  it('alerts again when bought licenses make the pool bigger', async () => {
+    const { organizationId } = await seedOrganization();
+
+    await claim(organizationId, 100, 1000);
+
+    expect(await claim(organizationId, 100, 1000)).toBeNull();
+    expect(await claim(organizationId, 100, 2000)).toEqual(expect.any(String));
+    expect(await claim(organizationId, 80, 2000)).toBeNull();
   });
 
   it('keeps alerts separate per organization', async () => {

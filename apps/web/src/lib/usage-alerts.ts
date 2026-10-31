@@ -40,10 +40,8 @@ async function logSystemEvent(
 export async function sendUsageAlertIfNeeded(planInfo: CurrentPlanInfo, used: UsageAmounts): Promise<void> {
   if (!planInfo.organizationId) return;
 
-  const threshold = usageThresholdReached(used, {
-    requests: planInfo.monthlyRequestLimit,
-    tokens: planInfo.monthlyTokenLimit,
-  });
+  const limits = { requests: planInfo.monthlyRequestLimit, tokens: planInfo.monthlyTokenLimit };
+  const threshold = usageThresholdReached(used, limits);
   if (!threshold) return;
 
   const metadata = { organization_id: planInfo.organizationId, threshold };
@@ -54,6 +52,7 @@ export async function sendUsageAlertIfNeeded(planInfo: CurrentPlanInfo, used: Us
       threshold,
       periodStart: new Date(planInfo.periodStart),
       used,
+      limits,
     });
     if (!alertId) return;
 

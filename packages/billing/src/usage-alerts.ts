@@ -36,13 +36,16 @@ export interface UsageAlertClaimInput {
   /** The plan's usage-period start (CurrentPlanInfo.periodStart). */
   periodStart: Date;
   used: UsageAmounts;
+  /** The pool's size now; it grows when the organization buys licenses. */
+  limits: UsageAmounts;
 }
 
 /**
  * Records an alert about to be sent, or returns null when this threshold (or
- * a higher one) was already alerted since `periodStart` -- so each threshold
- * is emailed once per period. Free plans count a rolling 30 days, so for
- * them that means at most once per 30 days.
+ * a higher one) was already alerted since `periodStart` for a pool of the
+ * same size -- so each threshold is emailed once per period, and again if
+ * more licenses are bought and the bigger pool fills up. Free plans count a
+ * rolling 30 days, so for them that means at most once per 30 days.
  *
  * Serialized per organization so two concurrent requests crossing the line
  * together can't both claim. The key differs from the optimize route's usage
@@ -57,7 +60,9 @@ export async function claimUsageAlert(db: Database, input: UsageAlertClaimInput)
         and(
           eq(organizationUsageAlerts.organizationId, input.organizationId),
           gte(organizationUsageAlerts.threshold, input.threshold),
-          gte(organizationUsageAlerts.createdAt, input.periodStart)
+          gte(organizationUsageAlerts.createdAt, input.periodStart),
+          eq(organizationUsageAlerts.requestsLimit, input.limits.requests),
+          eq(organizationUsageAlerts.tokensLimit, input.limits.tokens)
         )
       )
       .limit(1);
@@ -70,7 +75,9 @@ export async function claimUsageAlert(db: Database, input: UsageAlertClaimInput)
         threshold: input.threshold,
         periodStart: input.periodStart,
         requestsUsed: input.used.requests,
+        requestsLimit: input.limits.requests,
         tokensUsed: input.used.tokens,
+        tokensLimit: input.limits.tokens,
       })
       .returning({ id: organizationUsageAlerts.id });
     return alert!.id;
