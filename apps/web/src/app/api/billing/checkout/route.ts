@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { desc, eq } from 'drizzle-orm';
 import { getActiveOrganization, getCurrentProfile, requireOrganizationBillingManager } from '@prometheus/auth';
 import { organizationSubscriptions, plans, subscriptions } from '@prometheus/database';
-import { createCheckoutSession, createStripeClient, parseLicenseQuantity } from '@prometheus/billing';
+import { createCheckoutSession, createStripeClient, getLicenseSummary, parseLicenseQuantity } from '@prometheus/billing';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
@@ -38,6 +38,16 @@ export async function POST(request: NextRequest) {
       await requireOrganizationBillingManager(db, profile.id, activeOrganization.id);
     } catch {
       return NextResponse.json({ error: 'Only the organization owner or billing manager can change this plan.' }, { status: 403 });
+    }
+
+    // A second checkout would start a second subscription with its own
+    // licenses, billing the organization twice.
+    const existing = await getLicenseSummary(db, activeOrganization.id);
+    if (existing.providerSubscriptionId) {
+      return NextResponse.json(
+        { error: 'This organization already has a plan. Change its license count on the Billing page, or switch plans from Manage billing.' },
+        { status: 409 }
+      );
     }
   }
 
