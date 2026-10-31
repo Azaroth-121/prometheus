@@ -42,4 +42,9 @@ export const env = {
   get makeVerificationWebhookUrl() {
     return required('MAKE_VERIFICATION_WEBHOOK_URL', process.env.MAKE_VERIFICATION_WEBHOOK_URL);
   },
+  /** Same pattern, for the 80% / 100% usage alert sent to an organization's
+   * owner and billing managers (documentation/architecture/usage-alerts.md). */
+  get makeUsageAlertWebhookUrl() {
+    return required('MAKE_USAGE_ALERT_WEBHOOK_URL', process.env.MAKE_USAGE_ALERT_WEBHOOK_URL);
+  },
 };
