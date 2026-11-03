@@ -1,5 +1,5 @@
 /// <reference types="chrome" />
-import { getActiveSiteAdapter, getText, setText } from './sites';
+import { asComposer, getActiveSiteAdapter, getText, setText } from './sites';
 import { createOverlay } from './ui';
 import type { OptimizeMessage, OptimizeMessageResponse, OutcomeMessage } from '../background';
 import type { OptimizeOutcome } from '@prometheus/shared-types';
@@ -121,11 +121,15 @@ function init() {
     }, DEBOUNCE_MS);
   }
 
+  const hideBadge = () => overlay.hideBadge();
+
   function attach(input: HTMLElement) {
     if (input === currentInput) return;
+    currentInput?.removeEventListener('input', handleInput);
+    currentInput?.removeEventListener('keydown', hideBadge);
     currentInput = input;
     input.addEventListener('input', handleInput);
-    input.addEventListener('keydown', () => overlay.hideBadge());
+    input.addEventListener('keydown', hideBadge);
   }
 
   // These sites are SPAs — the composer often isn't in the DOM at initial
@@ -135,6 +139,17 @@ function init() {
     if (input) attach(input);
   });
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Whatever composer the user actually types into wins, even if the site
+  // renamed it and findInput() no longer matches.
+  document.addEventListener(
+    'focusin',
+    (event) => {
+      const input = asComposer(event.target);
+      if (input) attach(input);
+    },
+    true,
+  );
 
   const initial = adapter.findInput();
   if (initial) attach(initial);
