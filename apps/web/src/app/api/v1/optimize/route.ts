@@ -22,7 +22,7 @@ import {
   type UsageCheckResult,
 } from '@prometheus/billing';
 import { getActivePromptConfig, PROMETHEUS_OUTPUT_JSON_SCHEMA } from '@prometheus/prompts';
-import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
+import { checkExecutionLeak, plainTextPrompt, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 
@@ -209,7 +209,9 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json<OptimizeSuccessResponse>({
     request_id: requestId,
-    optimized_prompt: output.improved_prompt,
+    // Pasted into a plain chat box, Markdown markers show as literal asterisks. Code prompts keep
+    // them: there `**` can be real syntax.
+    optimized_prompt: body.mode === 'code' ? output.improved_prompt : plainTextPrompt(output.improved_prompt),
     upgrade_notes: output.upgrade_notes,
     usage: { remaining_requests: Math.max(usage.remainingRequests - 1, 0) },
   });
