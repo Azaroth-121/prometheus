@@ -1,5 +1,5 @@
 export interface PrometheusOverlay {
-  showBadge: (anchor: DOMRect) => void;
+  showBadge: (input: HTMLElement) => void;
   hideBadge: () => void;
   showLoading: () => void;
   showResult: (
@@ -18,6 +18,34 @@ function escapeHtml(input: string): string {
   const div = document.createElement('div');
   div.textContent = input;
   return div.innerHTML;
+}
+
+/**
+ * The visible chat box around the text field: the field itself is often an inner element, while
+ * the site's own buttons (the "+" / attach button) sit in the same rounded box.
+ */
+function composerBox(input: HTMLElement): HTMLElement {
+  let box = input;
+  for (let el = input.parentElement, depth = 0; el && depth < 8; el = el.parentElement, depth++) {
+    const r = el.getBoundingClientRect();
+    if (r.height > 420 || r.width > window.innerWidth - 4) break;
+    box = el;
+    if (el.tagName === 'FORM') break;
+  }
+  return box;
+}
+
+/** The site's "+" / attach button: the leftmost small visible button in the chat box, left of the text. */
+function plusButton(box: HTMLElement, input: HTMLElement): DOMRect | null {
+  const inputRect = input.getBoundingClientRect();
+  let best: DOMRect | null = null;
+  for (const b of Array.from(box.querySelectorAll<HTMLElement>('button, [role="button"]'))) {
+    const r = b.getBoundingClientRect();
+    if (r.width === 0 || r.width > 56 || r.height > 56) continue;
+    if (r.left > inputRect.left + 8) continue;
+    if (!best || r.left < best.left) best = r;
+  }
+  return best;
 }
 
 /** Light or dark to match the host page (its own theme, which may differ from the OS). */
@@ -138,7 +166,10 @@ export function createOverlay(): PrometheusOverlay {
   let badgeClickHandler: (() => void) | null = null;
   badge.addEventListener('click', () => badgeClickHandler?.());
 
-  let lastAnchor: DOMRect | null = null;
+  let currentInput: HTMLElement | null = null;
+  // Explicit flags: an element's inline display is '' before first use, which isn't 'none'.
+  let badgeShown = false;
+  let cardShown = false;
   const GAP = 10;
 
   function applyTheme() {
@@ -146,26 +177,56 @@ export function createOverlay(): PrometheusOverlay {
   }
 
   /**
-   * Chat composers sit at the bottom of the window, so the card opens ABOVE the composer,
-   * left-aligned with it, as tall as the space allows (scrolling inside its body), and drops
-   * below only when there's more room there. Clamped to the viewport horizontally.
+   * Chat boxes sit at the bottom of the window, so the card opens ABOVE the chat box, pinned by
+   * its BOTTOM edge: opening "What changed" grows it upward, never off the screen. Its body is
+   * capped to the room available and scrolls inside. Drops below only when there's more room
+   * there. Left-aligned with the chat box, clamped to the viewport.
    */
-  function positionCard(anchor: DOMRect) {
+  function positionCard() {
+    if (!currentInput) return;
+    const anchor = composerBox(currentInput).getBoundingClientRect();
     card.style.visibility = 'hidden';
     card.style.display = 'flex';
     const above = anchor.top - GAP - 8;
     const below = window.innerHeight - anchor.bottom - GAP - 8;
-    const room = Math.max(above, below);
+    const room = Math.min(560, Math.max(above, below));
+    const chrome = (card.querySelector<HTMLElement>('.head')?.offsetHeight ?? 0) + (card.querySelector<HTMLElement>('.foot')?.offsetHeight ?? 0);
     const body = card.querySelector<HTMLElement>('.body');
-    if (body) body.style.maxHeight = `${Math.max(160, Math.min(520, room) - 120)}px`;
-    const height = card.offsetHeight;
-    const width = card.offsetWidth;
-    const top = above >= below ? Math.max(8, anchor.top - GAP - height) : anchor.bottom + GAP;
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-    card.style.top = `${top}px`;
-    card.style.left = `${left}px`;
+    if (body) body.style.maxHeight = `${Math.max(120, room - chrome)}px`;
+    if (above >= below) {
+      card.style.top = 'auto';
+      card.style.bottom = `${window.innerHeight - (anchor.top - GAP)}px`;
+    } else {
+      card.style.bottom = 'auto';
+      card.style.top = `${anchor.bottom + GAP}px`;
+    }
+    card.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - card.offsetWidth - 8))}px`;
     card.style.visibility = 'visible';
   }
+
+  /** Just above the site's "+" button, aligned with it; else the chat box's top-left corner. */
+  function positionBadge() {
+    if (!currentInput) return;
+    const box = composerBox(currentInput);
+    const boxRect = box.getBoundingClientRect();
+    const plus = plusButton(box, currentInput);
+    const width = badge.offsetWidth;
+    const left = plus ? plus.left : boxRect.left + 12;
+    badge.style.left = `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`;
+    badge.style.top = `${Math.max(8, boxRect.top - badge.offsetHeight - 8)}px`;
+  }
+
+  // Keep both attached to the chat box when the page scrolls, resizes or the box grows.
+  let frame = 0;
+  const follow = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      if (badgeShown) positionBadge();
+      if (cardShown) positionCard();
+    });
+  };
+  window.addEventListener('resize', follow);
+  window.addEventListener('scroll', follow, true);
 
   function open(html: string) {
     applyTheme();
@@ -176,21 +237,25 @@ export function createOverlay(): PrometheusOverlay {
       ${html}`;
     card.querySelector('.close')?.addEventListener('click', () => overlay.hide());
     badge.style.display = 'none';
-    if (lastAnchor) positionCard(lastAnchor);
+    badgeShown = false;
+    cardShown = true;
+    card.querySelector('details')?.addEventListener('toggle', () => positionCard());
+    positionCard();
   }
 
   const overlay: PrometheusOverlay = {
-    showBadge(anchor) {
-      lastAnchor = anchor;
+    showBadge(input) {
+      const r = input.getBoundingClientRect();
+      if (r.width < 120 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) return; // hidden or off-screen field
+      currentInput = input;
       applyTheme();
       badge.style.display = 'inline-flex';
-      // Top-right corner of the composer, just above it.
-      const width = badge.offsetWidth;
-      badge.style.left = `${Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8))}px`;
-      badge.style.top = `${Math.max(8, anchor.top - badge.offsetHeight - 8)}px`;
+      badgeShown = true;
+      positionBadge();
     },
     hideBadge() {
       badge.style.display = 'none';
+      badgeShown = false;
     },
     showLoading() {
       open(`
@@ -245,6 +310,8 @@ export function createOverlay(): PrometheusOverlay {
     hide() {
       card.style.display = 'none';
       badge.style.display = 'none';
+      cardShown = false;
+      badgeShown = false;
     },
     onBadgeClick(cb) {
       badgeClickHandler = cb;

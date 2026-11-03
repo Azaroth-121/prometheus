@@ -117,7 +117,7 @@ function init() {
       if (!currentInput) return;
       const text = getText(currentInput);
       if (text.trim().length < MIN_LENGTH) return;
-      overlay.showBadge(currentInput.getBoundingClientRect());
+      overlay.showBadge(currentInput);
     }, DEBOUNCE_MS);
   }
 
