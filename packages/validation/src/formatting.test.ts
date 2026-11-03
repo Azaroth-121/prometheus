@@ -20,4 +20,16 @@ describe('plainTextPrompt', () => {
   it('does not treat a hash without a following space as a heading', () => {
     expect(plainTextPrompt('#hashtag and C# code')).toBe('#hashtag and C# code');
   });
+
+  it('puts an inline numbered list onto separate lines', () => {
+    expect(plainTextPrompt('Create a plan with: 1. Objective: Define it. 2. Scope: Outline areas. 3. Resources: List them.')).toBe(
+      'Create a plan with:\n\n1. Objective: Define it.\n2. Scope: Outline areas.\n3. Resources: List them.',
+    );
+  });
+
+  it('leaves version numbers, decimals, a single item and existing lists alone', () => {
+    expect(plainTextPrompt('Use v2. format and 3.5 hours.')).toBe('Use v2. format and 3.5 hours.');
+    expect(plainTextPrompt('Only 1. Item here.')).toBe('Only 1. Item here.');
+    expect(plainTextPrompt('Steps:\n1. One\n2. Two')).toBe('Steps:\n1. One\n2. Two');
+  });
 });

@@ -20,17 +20,6 @@ function escapeHtml(input: string): string {
   return div.innerHTML;
 }
 
-/**
- * The model often returns a numbered brief as one paragraph ("…: 1. Objective: … 2. Scope: …").
- * Put each item on its own line so it reads as a list here and in the chat box. Only when there
- * are at least two items, and only before "N. " followed by a capital, so "v2. x" or "3.5" stay.
- */
-export function formatPrompt(prompt: string): string {
-  const items = prompt.match(/(^|\s)\d{1,2}\.\s+[A-Z]/g) ?? [];
-  if (items.length < 2 || /\n\s*\d{1,2}\.\s/.test(prompt)) return prompt;
-  return prompt.replace(/\s+(\d{1,2})\.\s+(?=[A-Z])/g, '\n$1. ').replace(/:\n1\. /, ':\n\n1. ');
-}
-
 /** Light or dark to match the host page (its own theme, which may differ from the OS). */
 function pageTheme(): 'light' | 'dark' {
   for (const el of [document.body, document.documentElement]) {
@@ -216,7 +205,8 @@ export function createOverlay(): PrometheusOverlay {
         </div>`);
     },
     showResult(prompt, notes, onReplace, onNotHelpful, onTryAgain) {
-      const text = formatPrompt(prompt);
+      // Already formatted for a chat box by the server (plainTextPrompt in @prometheus/validation).
+      const text = prompt;
       const notesHtml = notes.length
         ? `<details><summary>What changed (${notes.length})</summary><ul>${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul></details>`
         : '';
