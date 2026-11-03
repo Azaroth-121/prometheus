@@ -1,6 +1,6 @@
 /// <reference types="chrome" />
 import { asComposer, getActiveSiteAdapter, getText, setText } from './sites';
-import { createOverlay } from './ui';
+import { createOverlay, formatPrompt } from './ui';
 import type { OptimizeMessage, OptimizeMessageResponse, OutcomeMessage } from '../background';
 import type { OptimizeOutcome } from '@prometheus/shared-types';
 
@@ -88,7 +88,7 @@ function init() {
           optimizedPrompt,
           upgradeNotes,
           () => {
-            if (currentInput) setText(currentInput, optimizedPrompt);
+            if (currentInput) setText(currentInput, formatPrompt(optimizedPrompt));
             submitOutcome(requestId, 'accepted');
           },
           () => submitOutcome(requestId, 'rejected'),

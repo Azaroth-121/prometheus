@@ -4,6 +4,7 @@ import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@p
 import { isOptimizeError, OPTIMIZATION_MODES } from '@prometheus/shared-types';
 import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
+import { formatPrompt } from '../content/ui';
 import { Button, Chips, Field, Logo, Menu, Spinner, TextArea, UsagePill } from './ui';
 
 // Same origin the extension calls for the API -- apps/web serves both.
@@ -151,7 +152,7 @@ export default function App() {
 
   async function handleCopy() {
     if (!result) return;
-    await navigator.clipboard.writeText(result.optimized_prompt);
+    await navigator.clipboard.writeText(formatPrompt(result.optimized_prompt));
     setDone('copied');
     void submitOutcome(result.request_id, 'accepted');
   }
@@ -161,7 +162,7 @@ export default function App() {
     try {
       const reply = (await chrome.tabs.sendMessage(chatTab.tabId, {
         type: 'PROMETHEUS_INSERT',
-        text: result.optimized_prompt,
+        text: formatPrompt(result.optimized_prompt),
       })) as { ok?: boolean } | undefined;
       if (!reply?.ok) throw new Error('not inserted');
       setDone('inserted');
@@ -316,7 +317,7 @@ export default function App() {
             </button>
             <h1 className="text-sm font-semibold">Optimized prompt</h1>
             <div className="max-h-[260px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-line bg-surface p-3 text-[14px] leading-relaxed">
-              {result.optimized_prompt}
+              {formatPrompt(result.optimized_prompt)}
             </div>
             {result.upgrade_notes.length > 0 && (
               <div>
