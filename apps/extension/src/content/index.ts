@@ -140,6 +140,24 @@ function init() {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
+  // The popup asks which chat site this tab is, and can drop its optimized
+  // prompt straight into the composer ("Insert into ChatGPT").
+  chrome.runtime.onMessage.addListener((message: { type?: string; text?: string }, _sender, sendResponse) => {
+    if (message?.type === 'PROMETHEUS_PING') {
+      sendResponse({ site: adapter.id });
+      return;
+    }
+    if (message?.type === 'PROMETHEUS_INSERT' && typeof message.text === 'string') {
+      const input = currentInput ?? adapter.findInput();
+      if (!input) {
+        sendResponse({ ok: false });
+        return;
+      }
+      setText(input, message.text);
+      sendResponse({ ok: true });
+    }
+  });
+
   // Whatever composer the user actually types into wins, even if the site
   // renamed it and findInput() no longer matches.
   document.addEventListener(
