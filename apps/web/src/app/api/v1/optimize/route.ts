@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
+// Must come before the first `from 'openai'`: makes the SDK use the global web fetch. Without it
+// the Cloudflare (OpenNext) bundle picks the SDK's node-fetch shim, which fails in the Workers
+// runtime with "Connection error." Node 18+ has the same global fetch, so Azure is unaffected.
+import 'openai/shims/web';
 import OpenAI from 'openai';
 import { eq } from 'drizzle-orm';
 import {
