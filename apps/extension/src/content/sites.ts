@@ -4,10 +4,32 @@ export interface SiteAdapter {
   findInput: () => HTMLElement | null;
 }
 
+/** Narrower than this is a search box or a rename field, not a chat composer. */
+const MIN_COMPOSER_WIDTH = 200;
+
+/**
+ * The chat composer an element belongs to, or null. Used for whatever the
+ * user focuses, so the badge keeps working when a site renames its composer
+ * and the selectors below stop matching (ChatGPT dropped #prompt-textarea in
+ * late 2026 and the badge silently never appeared).
+ */
+export function asComposer(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof HTMLElement)) return null;
+  const el =
+    target.tagName === 'TEXTAREA'
+      ? target
+      : target.isContentEditable
+        ? (target.closest<HTMLElement>('[contenteditable="true"]') ?? target)
+        : null;
+  if (!el || el.getBoundingClientRect().width < MIN_COMPOSER_WIDTH) return null;
+  return el;
+}
+
 /**
  * None of these sites publish a stable API for this — selectors are a
  * best-effort snapshot and will need occasional updates when these sites
- * ship redesigns. Each has a fallback to a more generic selector.
+ * ship redesigns. Each has a fallback to a more generic selector, and
+ * content/index.ts also attaches to any composer the user focuses.
  */
 export const SITE_ADAPTERS: SiteAdapter[] = [
   {
@@ -15,6 +37,8 @@ export const SITE_ADAPTERS: SiteAdapter[] = [
     matches: (hostname) => hostname === 'chatgpt.com' || hostname === 'chat.openai.com',
     findInput: () =>
       document.querySelector<HTMLElement>('#prompt-textarea') ??
+      document.querySelector<HTMLElement>('[data-testid="prompt-textarea"]') ??
+      document.querySelector<HTMLElement>('form div[contenteditable="true"]') ??
       document.querySelector<HTMLElement>('form textarea'),
   },
   {
