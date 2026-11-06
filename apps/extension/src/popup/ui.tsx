@@ -118,3 +118,15 @@ export function Glow({ className = '' }: { className?: string }) {
     />
   );
 }
+
+/** The popup's version of apps/web's dashboard org pill (E0.5): the active org's name, or "Personal". */
+export function OrgBadge({ label, className = '' }: { label: string; className?: string }) {
+  return (
+    <span
+      title={label}
+      className={`min-w-0 truncate rounded-full border border-line bg-surface-raised px-2 py-0.5 text-[11px] font-medium text-ink ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
