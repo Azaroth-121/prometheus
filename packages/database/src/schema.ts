@@ -74,6 +74,9 @@ export const organizationMembers = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
     role: text('role', { enum: ['owner', 'admin', 'member', 'billing'] }).notNull().default('member'),
+    // Set while the member holds one of the organization's licenses
+    // (ADR-004). Null for members who only manage the organization.
+    licenseAssignedAt: timestamp('license_assigned_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`now()`),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().default(sql`now()`),
   },
@@ -83,6 +86,9 @@ export const organizationMembers = pgTable(
       .on(table.organizationId)
       .where(sql`${table.role} = 'owner'`),
     index('organization_members_user_id_idx').on(table.userId),
+    index('organization_members_licensed_idx')
+      .on(table.organizationId)
+      .where(sql`${table.licenseAssignedAt} is not null`),
   ]
 );
 
@@ -180,6 +186,9 @@ export const organizationSubscriptions = pgTable(
     status: text('status', {
       enum: ['active', 'trialing', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'unpaid'],
     }).notNull(),
+    // Licenses purchased -- the Stripe subscription item's quantity, written
+    // only by the webhook (ADR-004).
+    seatQuantity: integer('seat_quantity').notNull().default(1),
     currentPeriodStart: timestamp('current_period_start', { withTimezone: true }).notNull(),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }).notNull(),
     cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
