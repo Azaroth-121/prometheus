@@ -11,9 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "drizzle-orm": "^0.36.4",
     "@prometheus/database": "workspace:*",
-    "@prometheus/shared-types": "workspace:*"
+    "@prometheus/shared-types": "workspace:*",
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^10.16.0",

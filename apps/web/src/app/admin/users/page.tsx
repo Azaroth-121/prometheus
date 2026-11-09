@@ -1,7 +1,8 @@
-import { desc, ilike } from 'drizzle-orm';
+import { desc, ilike, sql } from 'drizzle-orm';
 import { profiles } from '@prometheus/database';
 import { Button, Card, Input } from '@prometheus/ui';
 import { db } from '@/lib/db';
+import { requirePlatformAdmin } from '@/lib/admin';
 import { setUserStatusAction } from './actions';
 
 export default async function AdminUsersPage({
@@ -10,6 +11,7 @@ export default async function AdminUsersPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
+  await requirePlatformAdmin();
 
   const users = await db
     .select({
@@ -18,6 +20,7 @@ export default async function AdminUsersPage({
       displayName: profiles.displayName,
       role: profiles.role,
       status: profiles.status,
+      organizationCount: sql<number>`(select count(*)::int from organization_members om where om.user_id = ${profiles.id})`,
     })
     .from(profiles)
     .where(q ? ilike(profiles.email, `%${q}%`) : undefined)
@@ -38,7 +41,7 @@ export default async function AdminUsersPage({
             <div>
               <p className="font-medium text-ink">{user.email}</p>
               <p className="text-sm text-ink-muted">
-                {user.role} · {user.status}
+                {user.role} · {user.status} · {user.organizationCount} organizations
               </p>
             </div>
             <form action={setUserStatusAction} className="flex items-center gap-2">

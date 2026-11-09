@@ -2,13 +2,22 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '@prometheus/database';
-import { optimizationRequests, plans, profiles, subscriptions, type Database } from '@prometheus/database';
-import { checkUsageAgainstPlan, getCurrentPlanInfo } from './access';
+import {
+  organizationMembers,
+  organizations,
+  organizationSubscriptions,
+  optimizationRequests,
+  plans,
+  profiles,
+  subscriptions,
+  type Database,
+} from '@prometheus/database';
+import { checkUsageAgainstPlan, getCurrentPlanInfo, withBillingScopeLock, UsageLimitExceededError } from './access';
 
 /**
  * Real, disposable Postgres via Testcontainers rather than mocking Drizzle's
@@ -79,6 +88,19 @@ describe('usage and plan access control', () => {
       })
       .returning();
     return plan!;
+  }
+
+  async function seedOrganization(ownerId: string, memberIds: string[] = []) {
+    const [organization] = await db
+      .insert(organizations)
+      .values({ name: 'Test Org', slug: `test-${crypto.randomUUID()}`, createdBy: ownerId })
+      .returning();
+    await db.insert(organizationMembers).values([
+      { organizationId: organization!.id, userId: ownerId, role: 'owner' },
+      ...memberIds.map((userId) => ({ organizationId: organization!.id, userId, role: 'member' as const })),
+    ]);
+    await db.update(profiles).set({ activeOrganizationId: organization!.id }).where(eq(profiles.id, ownerId));
+    return organization!;
   }
 
   async function seedRequest(userId: string, tokens: number) {
@@ -197,6 +219,168 @@ describe('usage and plan access control', () => {
     expect(info.monthlyRequestLimit).toBe(1500);
   });
 
+  it('counts every member request against the active organization shared allowance', async () => {
+    const ownerId = await seedUser();
+    const memberId = await seedUser();
+    await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 20, monthlyTokenLimit: 50_000 });
+    const organization = await seedOrganization(ownerId, [memberId]);
+    await db.insert(optimizationRequests).values({
+      userId: memberId,
+      organizationId: organization.id,
+      clientRequestId: crypto.randomUUID(),
+      source: 'test',
+      mode: 'standard',
+      promptVersion: 'v1',
+      model: 'test-model',
+      inputCharacterCount: 10,
+      inputTokens: 75,
+      outputTokens: 25,
+    });
+
+    const planInfo = await getCurrentPlanInfo(db, ownerId);
+    const result = await checkUsageAgainstPlan(db, ownerId, planInfo);
+
+    expect(planInfo.type).toBe('organization');
+    expect(planInfo.organizationId).toBe(organization.id);
+    expect(result.remainingRequests).toBe(19);
+  });
+
+  it('uses the active organization subscription instead of the owner individual subscription', async () => {
+    const ownerId = await seedUser();
+    const organization = await seedOrganization(ownerId);
+    const organizationPlan = await seedPlan({ code: 'org-business', name: 'Org Business' });
+    await db.insert(organizationSubscriptions).values({
+      organizationId: organization.id,
+      providerCustomerId: 'org-customer',
+      providerSubscriptionId: `sub-${crypto.randomUUID()}`,
+      planId: organizationPlan.id,
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+    });
+
+    const info = await getCurrentPlanInfo(db, ownerId);
+
+    expect(info.planName).toBe('Org Business');
+    expect(info.type).toBe('organization');
+  });
+
+  it('does not count organization requests against an individual allowance', async () => {
+    const userId = await seedUser();
+    const organization = await seedOrganization(userId);
+    await db.insert(optimizationRequests).values({
+      userId,
+      organizationId: organization.id,
+      clientRequestId: crypto.randomUUID(),
+      source: 'test',
+      mode: 'standard',
+      promptVersion: 'v1',
+      model: 'test-model',
+      inputCharacterCount: 10,
+      inputTokens: 10,
+      outputTokens: 0,
+    });
+    await db.update(profiles).set({ activeOrganizationId: null }).where(eq(profiles.id, userId));
+
+    const info = await getCurrentPlanInfo(db, userId);
+    const result = await checkUsageAgainstPlan(db, userId, info);
+
+    expect(info.type).toBe('individual');
+    expect(result.remainingRequests).toBe(info.monthlyRequestLimit);
+  });
+
+  describe('withBillingScopeLock: closing the check-then-act race', () => {
+    async function reserveOne(userId: string, organizationId: string | null, planInfo: Awaited<ReturnType<typeof getCurrentPlanInfo>>) {
+      const lockKey = organizationId ?? userId;
+      return withBillingScopeLock(db, lockKey, async (tx) => {
+        const result = await checkUsageAgainstPlan(tx, userId, planInfo);
+        if (!result.allowed) {
+          throw new UsageLimitExceededError(result);
+        }
+        await tx.insert(optimizationRequests).values({
+          userId,
+          organizationId,
+          clientRequestId: `race-${crypto.randomUUID()}`,
+          source: 'test',
+          mode: 'standard',
+          promptVersion: 'v1',
+          model: 'test-model',
+          inputCharacterCount: 10,
+          inputTokens: 10,
+          outputTokens: 0,
+        });
+        return result;
+      });
+    }
+
+    it('individual scope: a concurrent burst from one user never exceeds the plan limit', async () => {
+      const userId = await seedUser();
+      const planInfo = await planInfoWith({ monthlyRequestLimit: 5, monthlyTokenLimit: 1_000_000 });
+      const attempts = 20;
+
+      const results = await Promise.allSettled(
+        Array.from({ length: attempts }, () => reserveOne(userId, null, planInfo))
+      );
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
+
+      const [row] = await db
+        .select({ requests: sql<number>`count(*)::int` })
+        .from(optimizationRequests)
+        .where(eq(optimizationRequests.userId, userId));
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
+    }, 20_000);
+
+    it('organization scope: a burst from DIFFERENT members sharing the org pool never exceeds the limit', async () => {
+      // This is the case individual-only locking would get wrong: the pool
+      // is shared, so the lock has to key on the organization, not the
+      // caller -- two different users racing the same pool is exactly the
+      // scenario org-scoped billing introduces that didn't exist before.
+      const ownerId = await seedUser();
+      const memberA = await seedUser();
+      const memberB = await seedUser();
+      await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 6, monthlyTokenLimit: 1_000_000 });
+      const organization = await seedOrganization(ownerId, [memberA, memberB]);
+
+      const planInfo = await getCurrentPlanInfo(db, ownerId);
+      expect(planInfo.type).toBe('organization');
+
+      const attemptsPerUser = 7;
+      const allAttempts = [ownerId, memberA, memberB].flatMap((userId) =>
+        Array.from({ length: attemptsPerUser }, () => reserveOne(userId, organization.id, planInfo))
+      );
+      const results = await Promise.allSettled(allAttempts);
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
+
+      const [row] = await db
+        .select({ requests: sql<number>`count(*)::int` })
+        .from(optimizationRequests)
+        .where(eq(optimizationRequests.organizationId, organization.id));
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
+    }, 20_000);
+
+    it('different organizations never contend with each other', async () => {
+      const ownerA = await seedUser();
+      const ownerB = await seedUser();
+      await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 3, monthlyTokenLimit: 1_000_000 });
+      const orgA = await seedOrganization(ownerA);
+      const orgB = await seedOrganization(ownerB);
+
+      const planInfoA = await getCurrentPlanInfo(db, ownerA);
+      const planInfoB = await getCurrentPlanInfo(db, ownerB);
+
+      const results = await Promise.allSettled([
+        ...Array.from({ length: 3 }, () => reserveOne(ownerA, orgA.id, planInfoA)),
+        ...Array.from({ length: 3 }, () => reserveOne(ownerB, orgB.id, planInfoB)),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(6);
+    }, 20_000);
+  });
+
   async function planInfoWith(overrides: { monthlyRequestLimit: number; monthlyTokenLimit: number }) {
     return { ...(await getFreePlanInfoLike()), ...overrides };
   }
@@ -210,6 +394,9 @@ describe('usage and plan access control', () => {
       monthlyTokenLimit: 50_000,
       maximumInputLength: 2000,
       periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      type: 'individual' as const,
+      organizationId: null,
+      organizationName: null,
     };
   }
 });

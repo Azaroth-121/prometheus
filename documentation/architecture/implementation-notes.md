@@ -1,5 +1,7 @@
 # Implementation notes — deviations & decisions
 
+- **Organizations added (October 2026)**: multi-organization membership, owner/admin/member/billing roles, secure invitations, shared Stripe subscriptions and quotas, per-member usage reporting, organization audit events, and read-only platform-admin oversight are implemented. See `organizations.md` and Drizzle migration `0005_add_organizations.sql`.
+
 Tracks where the actual build diverges from `prometheus-plan.md` or adds decisions the original doc left open. Update this as later phases make further calls.
 
 ## Phase 1 decisions

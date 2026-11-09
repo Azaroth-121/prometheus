@@ -20,5 +20,6 @@ export function toProfile(row: ProfileRow): Profile {
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
     last_login_at: row.lastLoginAt ? row.lastLoginAt.toISOString() : null,
+    active_organization_id: row.activeOrganizationId,
   };
 }

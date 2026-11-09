@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { desc, eq } from 'drizzle-orm';
-import { getCurrentProfile } from '@prometheus/auth';
-import { plans, subscriptions } from '@prometheus/database';
+import { getActiveOrganization, getCurrentProfile, requireOrganizationBillingManager } from '@prometheus/auth';
+import { organizationSubscriptions, plans, subscriptions } from '@prometheus/database';
 import { createCheckoutSession, createStripeClient } from '@prometheus/billing';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -32,14 +32,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Plan is not available for checkout.' }, { status: 400 });
   }
 
+  const activeOrganization = await getActiveOrganization(db, profile.id);
+  if (activeOrganization) {
+    try {
+      await requireOrganizationBillingManager(db, profile.id, activeOrganization.id);
+    } catch {
+      return NextResponse.json({ error: 'Only the organization owner or billing manager can change this plan.' }, { status: 403 });
+    }
+  }
+
   // Reuse the same Stripe Customer across purchases/upgrades instead of
   // letting Stripe create a new one every time.
-  const [priorSubscription] = await db
-    .select({ providerCustomerId: subscriptions.providerCustomerId })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, profile.id))
-    .orderBy(desc(subscriptions.createdAt))
-    .limit(1);
+  const [priorSubscription] = activeOrganization
+    ? await db
+        .select({ providerCustomerId: organizationSubscriptions.providerCustomerId })
+        .from(organizationSubscriptions)
+        .where(eq(organizationSubscriptions.organizationId, activeOrganization.id))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1)
+    : await db
+        .select({ providerCustomerId: subscriptions.providerCustomerId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, profile.id))
+        .orderBy(desc(subscriptions.createdAt))
+        .limit(1);
 
   const stripe = createStripeClient(env.stripeSecretKey);
 
@@ -48,6 +64,7 @@ export async function POST(request: NextRequest) {
       customerId: priorSubscription?.providerCustomerId ?? null,
       customerEmail: profile.email,
       userId: profile.id,
+      organizationId: activeOrganization?.id ?? null,
       priceId: plan.providerPlanId,
       successUrl: `${env.appUrl}/dashboard/billing/success`,
       cancelUrl: `${env.appUrl}/dashboard/billing`,

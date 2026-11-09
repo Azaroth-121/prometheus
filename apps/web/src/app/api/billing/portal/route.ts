@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { desc, eq } from 'drizzle-orm';
-import { getCurrentProfile } from '@prometheus/auth';
-import { subscriptions } from '@prometheus/database';
+import { getActiveOrganization, getCurrentProfile, requireOrganizationBillingManager } from '@prometheus/auth';
+import { organizationSubscriptions, subscriptions } from '@prometheus/database';
 import { createBillingPortalSession, createStripeClient } from '@prometheus/billing';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -16,15 +16,31 @@ export async function POST() {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
-  const [subscription] = await db
-    .select({ providerCustomerId: subscriptions.providerCustomerId })
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, profile.id))
-    .orderBy(desc(subscriptions.createdAt))
-    .limit(1);
+  const activeOrganization = await getActiveOrganization(db, profile.id);
+  if (activeOrganization) {
+    try {
+      await requireOrganizationBillingManager(db, profile.id, activeOrganization.id);
+    } catch {
+      return NextResponse.json({ error: 'Only the organization owner or billing manager can manage billing.' }, { status: 403 });
+    }
+  }
+
+  const [subscription] = activeOrganization
+    ? await db
+        .select({ providerCustomerId: organizationSubscriptions.providerCustomerId })
+        .from(organizationSubscriptions)
+        .where(eq(organizationSubscriptions.organizationId, activeOrganization.id))
+        .orderBy(desc(organizationSubscriptions.createdAt))
+        .limit(1)
+    : await db
+        .select({ providerCustomerId: subscriptions.providerCustomerId })
+        .from(subscriptions)
+        .where(eq(subscriptions.userId, profile.id))
+        .orderBy(desc(subscriptions.createdAt))
+        .limit(1);
 
   if (!subscription) {
-    return NextResponse.json({ error: 'No billing account found for this user.' }, { status: 400 });
+    return NextResponse.json({ error: 'No billing account found for this billing scope.' }, { status: 400 });
   }
 
   const stripe = createStripeClient(env.stripeSecretKey);

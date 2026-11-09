@@ -1,0 +1,30 @@
+name: Mirror to private org repo
+
+# Keeps SoverAIgn-Solutions/prometheus (private, company-owned) as an
+# up-to-date backup/record of this repo's master -- the team doesn't work
+# out of it directly (no PRs, no branch protection there -- that needs a
+# paid GitHub plan on the org's side), so this replaces a manual weekly
+# `git push soveraign master`.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push master to the private mirror
+        run: |
+          git remote add private "https://x-access-token:${MIRROR_TOKEN}@github.com/SoverAIgn-Solutions/prometheus.git"
+          git push private master
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
