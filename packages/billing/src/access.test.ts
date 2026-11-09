@@ -17,7 +17,7 @@ import {
   subscriptions,
   type Database,
 } from '@prometheus/database';
-import { checkUsageAgainstPlan, getCurrentPlanInfo } from './access';
+import { checkUsageAgainstPlan, getCurrentPlanInfo, withBillingScopeLock, UsageLimitExceededError } from './access';
 
 /**
  * Real, disposable Postgres via Testcontainers rather than mocking Drizzle's
@@ -287,6 +287,98 @@ describe('usage and plan access control', () => {
 
     expect(info.type).toBe('individual');
     expect(result.remainingRequests).toBe(info.monthlyRequestLimit);
+  });
+
+  describe('withBillingScopeLock: closing the check-then-act race', () => {
+    async function reserveOne(userId: string, organizationId: string | null, planInfo: Awaited<ReturnType<typeof getCurrentPlanInfo>>) {
+      const lockKey = organizationId ?? userId;
+      return withBillingScopeLock(db, lockKey, async (tx) => {
+        const result = await checkUsageAgainstPlan(tx, userId, planInfo);
+        if (!result.allowed) {
+          throw new UsageLimitExceededError(result);
+        }
+        await tx.insert(optimizationRequests).values({
+          userId,
+          organizationId,
+          clientRequestId: `race-${crypto.randomUUID()}`,
+          source: 'test',
+          mode: 'standard',
+          promptVersion: 'v1',
+          model: 'test-model',
+          inputCharacterCount: 10,
+          inputTokens: 10,
+          outputTokens: 0,
+        });
+        return result;
+      });
+    }
+
+    it('individual scope: a concurrent burst from one user never exceeds the plan limit', async () => {
+      const userId = await seedUser();
+      const planInfo = await planInfoWith({ monthlyRequestLimit: 5, monthlyTokenLimit: 1_000_000 });
+      const attempts = 20;
+
+      const results = await Promise.allSettled(
+        Array.from({ length: attempts }, () => reserveOne(userId, null, planInfo))
+      );
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
+
+      const [row] = await db
+        .select({ requests: sql<number>`count(*)::int` })
+        .from(optimizationRequests)
+        .where(eq(optimizationRequests.userId, userId));
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
+    }, 20_000);
+
+    it('organization scope: a burst from DIFFERENT members sharing the org pool never exceeds the limit', async () => {
+      // This is the case individual-only locking would get wrong: the pool
+      // is shared, so the lock has to key on the organization, not the
+      // caller -- two different users racing the same pool is exactly the
+      // scenario org-scoped billing introduces that didn't exist before.
+      const ownerId = await seedUser();
+      const memberA = await seedUser();
+      const memberB = await seedUser();
+      await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 6, monthlyTokenLimit: 1_000_000 });
+      const organization = await seedOrganization(ownerId, [memberA, memberB]);
+
+      const planInfo = await getCurrentPlanInfo(db, ownerId);
+      expect(planInfo.type).toBe('organization');
+
+      const attemptsPerUser = 7;
+      const allAttempts = [ownerId, memberA, memberB].flatMap((userId) =>
+        Array.from({ length: attemptsPerUser }, () => reserveOne(userId, organization.id, planInfo))
+      );
+      const results = await Promise.allSettled(allAttempts);
+
+      const succeeded = results.filter((r) => r.status === 'fulfilled');
+      expect(succeeded).toHaveLength(planInfo.monthlyRequestLimit);
+
+      const [row] = await db
+        .select({ requests: sql<number>`count(*)::int` })
+        .from(optimizationRequests)
+        .where(eq(optimizationRequests.organizationId, organization.id));
+      expect(row?.requests ?? 0).toBe(planInfo.monthlyRequestLimit);
+    }, 20_000);
+
+    it('different organizations never contend with each other', async () => {
+      const ownerA = await seedUser();
+      const ownerB = await seedUser();
+      await seedPlan({ code: 'free', name: 'Free', monthlyRequestLimit: 3, monthlyTokenLimit: 1_000_000 });
+      const orgA = await seedOrganization(ownerA);
+      const orgB = await seedOrganization(ownerB);
+
+      const planInfoA = await getCurrentPlanInfo(db, ownerA);
+      const planInfoB = await getCurrentPlanInfo(db, ownerB);
+
+      const results = await Promise.allSettled([
+        ...Array.from({ length: 3 }, () => reserveOne(ownerA, orgA.id, planInfoA)),
+        ...Array.from({ length: 3 }, () => reserveOne(ownerB, orgB.id, planInfoB)),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(6);
+    }, 20_000);
   });
 
   async function planInfoWith(overrides: { monthlyRequestLimit: number; monthlyTokenLimit: number }) {

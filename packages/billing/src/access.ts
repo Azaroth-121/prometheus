@@ -11,6 +11,12 @@ import {
 } from '@prometheus/database';
 import type { UsageSummary } from '@prometheus/shared-types';
 
+/** The type Drizzle hands a transaction callback -- derived from `transaction`'s own signature rather than guessed, so it can't drift from whatever Drizzle actually passes. */
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/** checkUsageAgainstPlan/getPeriodUsage run both standalone (tests, getUsageSummary) and inside withBillingScopeLock's transaction. */
+type Queryable = Database | Transaction;
+
 export interface BillingScope {
   type: 'individual' | 'organization';
   organizationId: string | null;
@@ -126,8 +132,16 @@ export interface UsageCheckResult {
   remainingRequests: number;
 }
 
+/** Thrown inside `withBillingScopeLock`'s callback to reject the transaction and surface why. */
+export class UsageLimitExceededError extends Error {
+  constructor(public readonly result: UsageCheckResult) {
+    super('Usage limit exceeded');
+    this.name = 'UsageLimitExceededError';
+  }
+}
+
 async function getPeriodUsage(
-  db: Database,
+  db: Queryable,
   userId: string,
   planInfo: CurrentPlanInfo
 ): Promise<{ requests: number; tokens: number }> {
@@ -147,7 +161,7 @@ async function getPeriodUsage(
 }
 
 export async function checkUsageAgainstPlan(
-  db: Database,
+  db: Queryable,
   userId: string,
   planInfo: CurrentPlanInfo
 ): Promise<UsageCheckResult> {
@@ -224,4 +238,39 @@ export async function getOrganizationMemberUsage(
     .where(eq(organizationMembers.organizationId, organizationId))
     .groupBy(profiles.id, profiles.email, profiles.displayName)
     .orderBy(sql`count(${optimizationRequests.id}) desc`);
+}
+
+/**
+ * Closes the check-then-act race in checkUsageAgainstPlan: without this,
+ * two concurrent /api/v1/optimize calls both read the same pre-insert
+ * usage count and both pass. Organization-scoped usage makes this WORSE
+ * than the individual case it was originally written for -- a shared pool
+ * means every member of an org is a concurrent actor against the same
+ * counter, not just one user's own parallel requests.
+ *
+ * `scopeKey` is the resource whose quota is being spent: the organization
+ * id for org-scoped billing (so the whole org serializes on its shared
+ * pool), or the user id for individual billing (so unrelated users never
+ * contend with each other). Callers must pass `planInfo.organizationId ??
+ * userId` -- see /api/v1/optimize/route.ts.
+ *
+ * `pg_advisory_xact_lock` serializes calls sharing a key (different keys
+ * never contend) and auto-releases at transaction end -- no manual unlock,
+ * no lock left held on a crash.
+ *
+ * `fn` receives the transaction and is expected to both call
+ * `checkUsageAgainstPlan` (passing that same transaction, not `db`) and,
+ * if allowed, perform whatever write "spends" the quota -- both inside the
+ * lock, so nothing else can slip in between the check and the spend.
+ * Throw `UsageLimitExceededError` from `fn` to reject and roll back.
+ */
+export async function withBillingScopeLock<T>(
+  db: Database,
+  scopeKey: string,
+  fn: (tx: Transaction) => Promise<T>
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${scopeKey})::bigint)`);
+    return fn(tx);
+  });
 }

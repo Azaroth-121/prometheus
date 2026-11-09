@@ -43,3 +43,9 @@ deploy.ps1
 
 # /brag skill output -- generated marketing video/composition, not source
 brag-output/
+
+# Cloudflare Workers (OpenNext) build output and local secrets
+.open-next/
+.wrangler/
+.dev.vars
+apps/web/worker-configuration.d.ts
