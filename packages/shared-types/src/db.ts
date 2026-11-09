@@ -1,4 +1,5 @@
 import type { UserRole } from './roles';
+import type { OrganizationRole } from './roles';
 
 export type AccountStatus = 'active' | 'suspended' | 'deleted';
 
@@ -11,6 +12,7 @@ export interface Profile {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  active_organization_id: string | null;
 }
 
 export type SubscriptionStatus =
@@ -114,6 +116,7 @@ export interface PromptConfig {
 export interface AdminAuditLog {
   id: string;
   admin_user_id: string;
+  organization_id: string | null;
   action: string;
   target_type: string;
   target_id: string;
@@ -122,6 +125,54 @@ export interface AdminAuditLog {
   ip_address: string | null;
   reason: string | null;
   created_at: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  status: 'active' | 'suspended';
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrganizationMember {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: OrganizationRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrganizationInvitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: Exclude<OrganizationRole, 'owner'>;
+  invited_by: string;
+  expires_at: string;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface OrganizationSubscription {
+  id: string;
+  organization_id: string;
+  provider: 'stripe';
+  provider_customer_id: string;
+  provider_subscription_id: string;
+  plan_id: string;
+  status: SubscriptionStatus;
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  reminder_sent_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type SystemEventSeverity = 'debug' | 'info' | 'warning' | 'error' | 'critical';

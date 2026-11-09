@@ -82,6 +82,9 @@ export interface UsageSummary {
   requests_limit: number;
   tokens_used: number;
   tokens_limit: number;
+  billing_scope: 'individual' | 'organization';
+  organization_id: string | null;
+  organization_name: string | null;
 }
 
 /**

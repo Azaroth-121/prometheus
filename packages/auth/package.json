@@ -8,14 +8,15 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:seed-demo": "tsx src/seed-demo.ts"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "drizzle-orm": "^0.36.4",
     "@prometheus/database": "workspace:*",
-    "@prometheus/shared-types": "workspace:*"
+    "@prometheus/shared-types": "workspace:*",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.45.4",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^10.16.0",
@@ -24,6 +25,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
     "pg": "^8.13.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.0",
     "vitest": "^2.1.8"
   }

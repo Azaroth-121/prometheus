@@ -1,5 +1,5 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import * as schema from './schema';
 
 export type Database = NodePgDatabase<typeof schema>;
@@ -19,8 +19,11 @@ export type Database = NodePgDatabase<typeof schema>;
  * `where(eq(profiles.id, userId))`) before querying -- there is no database-
  * level backstop anymore.
  */
-export function createDatabaseClient(connectionString: string): Database {
-  const pool = new Pool({ connectionString });
+export function createDatabaseClient(
+  connectionString: string,
+  poolOptions: Omit<PoolConfig, 'connectionString'> = {}
+): Database {
+  const pool = new Pool({ ...poolOptions, connectionString });
   return drizzle(pool, { schema });
 }
 
