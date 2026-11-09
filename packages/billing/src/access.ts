@@ -83,27 +83,42 @@ async function getFreePlanInfo(db: Database, scope: BillingScope): Promise<Curre
   };
 }
 
+interface ActiveSubscription {
+  currentPeriodStart: Date;
+  currentPeriodEnd: Date;
+  planId: string;
+  seatQuantity: number | null;
+}
+
+async function getActiveOrganizationSubscription(
+  db: Database,
+  organizationId: string
+): Promise<ActiveSubscription | undefined> {
+  const [subscription] = await db
+    .select({
+      currentPeriodStart: organizationSubscriptions.currentPeriodStart,
+      currentPeriodEnd: organizationSubscriptions.currentPeriodEnd,
+      planId: organizationSubscriptions.planId,
+      seatQuantity: organizationSubscriptions.seatQuantity,
+    })
+    .from(organizationSubscriptions)
+    .where(
+      and(
+        eq(organizationSubscriptions.organizationId, organizationId),
+        eq(organizationSubscriptions.status, 'active')
+      )
+    )
+    .orderBy(desc(organizationSubscriptions.currentPeriodEnd))
+    .limit(1);
+  return subscription;
+}
+
 /** Resolves the active organization's shared plan, or the user's individual plan. */
 export async function getCurrentPlanInfo(db: Database, userId: string): Promise<CurrentPlanInfo> {
   const scope = await getBillingScope(db, userId);
 
   const [subscription] = scope.organizationId
-    ? await db
-        .select({
-          currentPeriodStart: organizationSubscriptions.currentPeriodStart,
-          currentPeriodEnd: organizationSubscriptions.currentPeriodEnd,
-          planId: organizationSubscriptions.planId,
-          seatQuantity: organizationSubscriptions.seatQuantity,
-        })
-        .from(organizationSubscriptions)
-        .where(
-          and(
-            eq(organizationSubscriptions.organizationId, scope.organizationId),
-            eq(organizationSubscriptions.status, 'active')
-          )
-        )
-        .orderBy(desc(organizationSubscriptions.currentPeriodEnd))
-        .limit(1)
+    ? [await getActiveOrganizationSubscription(db, scope.organizationId)]
     : await db
         .select({
           currentPeriodStart: subscriptions.currentPeriodStart,
@@ -116,6 +131,27 @@ export async function getCurrentPlanInfo(db: Database, userId: string): Promise<
         .orderBy(desc(subscriptions.currentPeriodEnd))
         .limit(1);
 
+  return planInfoFromSubscription(db, scope, subscription);
+}
+
+/**
+ * An organization's shared plan and pool, looked up by the organization
+ * rather than through a member -- for platform-admin views (C.4). Members
+ * get theirs through getCurrentPlanInfo.
+ */
+export async function getOrganizationPlanInfo(
+  db: Database,
+  organization: { id: string; name: string }
+): Promise<CurrentPlanInfo> {
+  const scope: BillingScope = { type: 'organization', organizationId: organization.id, organizationName: organization.name };
+  return planInfoFromSubscription(db, scope, await getActiveOrganizationSubscription(db, organization.id));
+}
+
+async function planInfoFromSubscription(
+  db: Database,
+  scope: BillingScope,
+  subscription: ActiveSubscription | undefined
+): Promise<CurrentPlanInfo> {
   if (!subscription || subscription.currentPeriodEnd <= new Date()) {
     return getFreePlanInfo(db, scope);
   }
@@ -198,6 +234,15 @@ export async function checkUsageAgainstPlan(
     exceeded: null,
     remainingRequests: Math.max(planInfo.monthlyRequestLimit - usage.requests, 0),
   };
+}
+
+/** Requests and tokens an organization has used this period against its whole shared pool (C.4 admin views). */
+export async function getOrganizationPeriodUsage(
+  db: Database,
+  planInfo: CurrentPlanInfo & { organizationId: string }
+): Promise<{ requests: number; tokens: number }> {
+  // getPeriodUsage only reads the user id for individual plans.
+  return getPeriodUsage(db, planInfo.organizationId, planInfo);
 }
 
 export async function getUsageSummary(db: Database, userId: string): Promise<UsageSummary> {
