@@ -1,10 +1,12 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { Button, Card, Glow, Input } from '@prometheus/ui';
 import { registerAction, type RegisterState } from './actions';
 
 const initialState: RegisterState = { error: null, success: false };
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function Wordmark() {
   return (
@@ -19,6 +21,30 @@ function Wordmark() {
 
 export default function RegisterPage() {
   const [state, formAction, isSubmitting] = useActionState(registerAction, initialState);
+  // Rendered once per mount, embedded as a hidden field, and checked server-side
+  // in registerAction -- a submission that arrives implausibly fast after the
+  // form rendered is treated as a bot, not a user who read and filled it in.
+  const [startedAt] = useState(() => Date.now());
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [clientError, setClientError] = useState<string | null>(null);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    const email = String(new FormData(form).get('email') ?? '');
+    const password = String(new FormData(form).get('password') ?? '');
+
+    if (!EMAIL_PATTERN.test(email)) {
+      event.preventDefault();
+      setClientError('Enter a valid email address.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      event.preventDefault();
+      setClientError('Passwords do not match.');
+      return;
+    }
+    setClientError(null);
+  }
 
   if (state.success) {
     return (
@@ -39,15 +65,47 @@ export default function RegisterPage() {
         Create an account
       </h1>
       <Card>
-        <form className="flex flex-col gap-4" action={formAction}>
+        <form className="flex flex-col gap-4" action={formAction} onSubmit={handleSubmit} noValidate>
           <Input type="email" name="email" placeholder="Email" required />
           <Input type="password" name="password" placeholder="Password" minLength={8} required />
-          {state.error && <p className="text-sm text-red-400">{state.error}</p>}
+          <Input
+            type="password"
+            placeholder="Confirm password"
+            minLength={8}
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+
+          {/* Honeypot: invisible to sighted users and skipped by tab order; a
+              real person never fills this in, a bot that autofills every
+              field will. Checked server-side in registerAction. */}
+          <input
+            type="text"
+            name="company"
+            autoComplete="off"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="absolute h-0 w-0 opacity-0"
+            style={{ position: 'absolute', left: '-9999px' }}
+          />
+          <input type="hidden" name="startedAt" value={startedAt} readOnly />
+
+          <p aria-live="polite" className="min-h-[1.25rem] text-sm text-red-400">
+            {clientError ?? state.error}
+          </p>
+
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Creating account…' : 'Create account'}
           </Button>
         </form>
       </Card>
+      <p className="text-center text-xs text-ink-muted">
+        By creating an account, you agree to our{' '}
+        <Link href="/terms" className="underline hover:text-ink">Terms</Link>{' '}
+        and{' '}
+        <Link href="/privacy" className="underline hover:text-ink">Privacy Policy</Link>.
+      </p>
     </main>
   );
 }
