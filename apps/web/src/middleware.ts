@@ -12,6 +12,20 @@ const { auth } = NextAuth(authConfig);
 const PROTECTED_PREFIXES = ['/dashboard', '/admin'];
 
 export default auth((request) => {
+  // The edge in front of the app (Azure Container Apps' ingress today,
+  // Cloudflare after the move) terminates TLS and sets x-forwarded-proto to
+  // what the client actually used -- this is what lets us tell "client used
+  // http" apart from "internal hop", which request.nextUrl.protocol can't
+  // distinguish on its own. On Cloudflare, "Always Use HTTPS" on the zone
+  // redirects before the request reaches the Worker; this stays as the
+  // fallback when the header does say http.
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  if (process.env.NODE_ENV === 'production' && forwardedProto === 'http') {
+    const httpsUrl = new URL(request.nextUrl.toString());
+    httpsUrl.protocol = 'https:';
+    return NextResponse.redirect(httpsUrl, 308);
+  }
+
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     request.nextUrl.pathname.startsWith(prefix)
   );
@@ -26,5 +40,9 @@ export default auth((request) => {
 });
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
+  // Runs on every page except static assets and API routes -- the HTTPS
+  // redirect needs to apply site-wide, not just the two protected prefixes,
+  // but /api is excluded so this never touches a webhook request (e.g.
+  // Stripe's signature-verified body) or the cron endpoint.
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|icon|opengraph-image).*)'],
 };
