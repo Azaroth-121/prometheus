@@ -1,5 +1,5 @@
 /// <reference types="chrome" />
-import { getActiveSiteAdapter, getText, setText } from './sites';
+import { asComposer, getActiveSiteAdapter, getText, setText } from './sites';
 import { createOverlay } from './ui';
 import type { OptimizeMessage, OptimizeMessageResponse, OutcomeMessage } from '../background';
 import type { OptimizeOutcome } from '@prometheus/shared-types';
@@ -117,15 +117,19 @@ function init() {
       if (!currentInput) return;
       const text = getText(currentInput);
       if (text.trim().length < MIN_LENGTH) return;
-      overlay.showBadge(currentInput.getBoundingClientRect());
+      overlay.showBadge(currentInput);
     }, DEBOUNCE_MS);
   }
 
+  const hideBadge = () => overlay.hideBadge();
+
   function attach(input: HTMLElement) {
     if (input === currentInput) return;
+    currentInput?.removeEventListener('input', handleInput);
+    currentInput?.removeEventListener('keydown', hideBadge);
     currentInput = input;
     input.addEventListener('input', handleInput);
-    input.addEventListener('keydown', () => overlay.hideBadge());
+    input.addEventListener('keydown', hideBadge);
   }
 
   // These sites are SPAs — the composer often isn't in the DOM at initial
@@ -135,6 +139,35 @@ function init() {
     if (input) attach(input);
   });
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // The popup asks which chat site this tab is, and can drop its optimized
+  // prompt straight into the composer ("Insert into ChatGPT").
+  chrome.runtime.onMessage.addListener((message: { type?: string; text?: string }, _sender, sendResponse) => {
+    if (message?.type === 'PROMETHEUS_PING') {
+      sendResponse({ site: adapter.id });
+      return;
+    }
+    if (message?.type === 'PROMETHEUS_INSERT' && typeof message.text === 'string') {
+      const input = currentInput ?? adapter.findInput();
+      if (!input) {
+        sendResponse({ ok: false });
+        return;
+      }
+      setText(input, message.text);
+      sendResponse({ ok: true });
+    }
+  });
+
+  // Whatever composer the user actually types into wins, even if the site
+  // renamed it and findInput() no longer matches.
+  document.addEventListener(
+    'focusin',
+    (event) => {
+      const input = asComposer(event.target);
+      if (input) attach(input);
+    },
+    true,
+  );
 
   const initial = adapter.findInput();
   if (initial) attach(initial);
