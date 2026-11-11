@@ -9,6 +9,7 @@ import { db } from '@/lib/db';
 const NAV_LINKS = [
   { href: '/admin', label: 'Overview' },
   { href: '/admin/users', label: 'Users' },
+  { href: '/admin/activity', label: 'Activity' },
   { href: '/admin/organizations', label: 'Organizations' },
   { href: '/admin/members', label: 'Members' },
   { href: '/admin/usage', label: 'Usage & Billing' },

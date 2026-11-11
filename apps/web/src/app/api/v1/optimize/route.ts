@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
+// Must come before the first `from 'openai'`: makes the SDK use the global web fetch. Without it
+// the Cloudflare (OpenNext) bundle picks the SDK's node-fetch shim, which fails in the Workers
+// runtime with "Connection error." Node 18+ has the same global fetch, so Azure is unaffected.
+import 'openai/shims/web';
 import OpenAI from 'openai';
 import { eq } from 'drizzle-orm';
 import {
@@ -20,7 +24,7 @@ import {
   type UsageCheckResult,
 } from '@prometheus/billing';
 import { getActivePromptConfig, PROMETHEUS_OUTPUT_JSON_SCHEMA } from '@prometheus/prompts';
-import { checkExecutionLeak, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
+import { checkExecutionLeak, plainTextPrompt, validateModelOutput, GuardrailValidationError } from '@prometheus/validation';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { sendUsageAlertIfNeeded } from '@/lib/usage-alerts';
@@ -225,7 +229,9 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json<OptimizeSuccessResponse>({
     request_id: requestId,
-    optimized_prompt: output.improved_prompt,
+    // Pasted into a plain chat box, Markdown markers show as literal asterisks. Code prompts keep
+    // them: there `**` can be real syntax.
+    optimized_prompt: body.mode === 'code' ? output.improved_prompt : plainTextPrompt(output.improved_prompt),
     upgrade_notes: output.upgrade_notes,
     usage: { remaining_requests: Math.max(usage.remainingRequests - 1, 0) },
   });

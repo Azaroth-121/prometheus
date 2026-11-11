@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prometheus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo2x7mPmJZ+7R5qcepg6w2AbNjo87vsZ5+AGNgq+ACoQEg5zeLx+mlT/FLiH8/Q9YP/0K+Y9dkT2rnVGq7oPYfFFIY8k+hsFdf8F8UBcNc+pusFmcZR4KzBNS6b2V21PxrTVcwOynxsldvtK65QH7TDNBNm1J9vR5vZyidT20UVuoWUycsSTZnA6iDBwQ19RrLRdh38DUQBT1xqNqy5rZ9/gR+ZeEXIftL2gPVEnSqfydly7lpg605F4rRDXPtbFgPjknm3JDo3ToGAXlW37bg+BJMtmok3R/rhcpQGU+kpdj63bgshl7WftyXMygmcD0UYgDyN58rBmGiGPe8sVx5wIDAQAB",
   "description": "Turn a rough request into a structured, copy-ready prompt.",
   "action": {
@@ -37,6 +37,6 @@
   "permissions": ["storage"],
   "host_permissions": [
     "http://localhost:3000/*",
-    "https://ca-prometheus-web-dev-eus2-01.delightfulcliff-8cc5b938.eastus2.azurecontainerapps.io/*"
+    "https://prometheus-web.steven-palange.workers.dev/*"
   ]
 }
