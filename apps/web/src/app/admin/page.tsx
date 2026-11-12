@@ -1,5 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { organizationSubscriptions, optimizationRequests, plans, subscriptions } from '@prometheus/database';
+import { summarizeSubscriptions } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
 import { requirePlatformAdmin } from '@/lib/admin';
@@ -58,18 +59,7 @@ export default async function AdminOverviewPage() {
       .orderBy(sql`sum(${optimizationRequests.estimatedCost}) desc`),
   ]);
 
-  const orgIds = new Set(orgRows.map((row) => row.id));
-  const all = [
-    ...orgRows.map((row) => ({ ...row, scope: 'Organization' })),
-    ...userRows.filter((row) => !orgIds.has(row.id)).map((row) => ({ ...row, scope: 'Individual' })),
-  ];
-  const active = all.filter((row) => row.status === 'active' && row.periodEnd > now);
-  const monthlyValue = active.filter((row) => row.currency.toLowerCase() === 'usd').reduce((sum, row) => sum + Number(row.price), 0);
-  const mix = new Map<string, number>();
-  for (const row of active) {
-    const key = `${row.scope} · ${row.plan}`;
-    mix.set(key, (mix.get(key) ?? 0) + 1);
-  }
+  const subscriptionsSummary = summarizeSubscriptions(orgRows, userRows, now, since);
   const requests = dailyRows.reduce((sum, row) => sum + row.requests, 0);
   const cost = dailyRows.reduce((sum, row) => sum + Number(row.cost), 0);
   const inputTokens = dailyRows.reduce((sum, row) => sum + row.inputTokens, 0);
@@ -80,14 +70,14 @@ export default async function AdminOverviewPage() {
     <section className="space-y-3" aria-labelledby="subscriptions-heading">
       <div><h2 id="subscriptions-heading" className="text-lg font-semibold text-ink">Subscriptions</h2><p className="text-sm text-ink-muted">Current database snapshot. Listed monthly value uses plan prices; it is not collected revenue.</p></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Active subscriptions" value={count(active.length)} detail="Provider IDs counted once across both scopes" />
-        <Metric label="Listed monthly value" value={money(monthlyValue)} detail="USD active prices; excludes discounts, tax and refunds" />
-        <Metric label="New subscriptions" value={count(all.filter((row) => row.createdAt >= since).length)} detail={`Created in the last ${DAYS} days`} />
-        <Metric label="Canceled subscriptions" value={count(all.filter((row) => row.status === 'canceled').length)} detail="Current status; cancellation date is not stored" />
+        <Metric label="Active subscriptions" value={count(subscriptionsSummary.activeCount)} detail="Provider IDs counted once across both scopes" />
+        <Metric label="Listed monthly value" value={money(subscriptionsSummary.monthlyUsdValue)} detail={`USD active prices; excludes discounts, tax, refunds and ${count(subscriptionsSummary.excludedNonUsdCount)} non-USD subscriptions`} />
+        <Metric label="New subscriptions" value={count(subscriptionsSummary.newCount)} detail={`Created in the last ${DAYS} days`} />
+        <Metric label="Canceled subscriptions" value={count(subscriptionsSummary.canceledCount)} detail="Current status; cancellation date is not stored" />
       </div>
       <Card><h3 className="font-medium text-ink">Active subscriptions by plan</h3>
-        {mix.size === 0 ? <p className="mt-3 text-sm text-ink-muted">No active subscriptions.</p> :
-          <ul className="mt-3 divide-y divide-ink/10">{[...mix.entries()].sort((a, b) => b[1] - a[1]).map(([plan, total]) =>
+        {subscriptionsSummary.planMix.size === 0 ? <p className="mt-3 text-sm text-ink-muted">No active subscriptions.</p> :
+          <ul className="mt-3 divide-y divide-ink/10">{[...subscriptionsSummary.planMix.entries()].sort((a, b) => b[1] - a[1]).map(([plan, total]) =>
             <li key={plan} className="flex justify-between py-2 text-sm"><span>{plan}</span><span className="font-medium">{count(total)}</span></li>)}</ul>}
       </Card>
     </section>
