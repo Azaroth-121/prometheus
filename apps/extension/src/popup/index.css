@@ -2,24 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Space-separated RGB so Tailwind can add opacity (bg-line/50). Contrast checked: ink-muted on
+   canvas is 6.1:1 light / 6.4:1 dark; brand-text on canvas 5.2:1 / 6.9:1. */
+:root {
+  --canvas: 255 255 255;
+  --surface: 246 247 249;
+  --line: 226 229 236;
+  --ink: 16 24 40;
+  --ink-muted: 84 94 112;
+  --brand-soft: 234 241 255;
+  --brand-text: 29 78 216;
+  --danger: 185 28 28;
+  --warning: 146 64 14;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: 15 17 23;
+    --surface: 24 27 35;
+    --line: 42 47 59;
+    --ink: 240 242 246;
+    --ink-muted: 160 168 184;
+    --brand-soft: 23 37 74;
+    --brand-text: 125 168 255;
+    --danger: 252 129 129;
+    --warning: 251 191 36;
+    color-scheme: dark;
+  }
+}
+
+html,
 body {
-  background: #05070d;
-  color: #e8edf7;
+  margin: 0;
+  background: rgb(var(--canvas));
+  color: rgb(var(--ink));
 }
 
 ::selection {
-  background: rgba(59, 130, 246, 0.35);
+  background: rgb(37 99 235 / 0.25);
 }
 
-/* Thin, dark, blue-tinted scrollbar — the default one looks jarring on a near-black popup. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1c2438 transparent;
+  scrollbar-color: rgb(var(--line)) transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #1c2438;
+  background: rgb(var(--line));
   border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
