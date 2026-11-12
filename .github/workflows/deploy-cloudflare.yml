@@ -1,0 +1,95 @@
+name: Deploy Cloudflare
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options: [qa, production]
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && vars.CLOUDFLARE_QA_READY == 'true') || (github.event_name == 'workflow_dispatch' && inputs.target == 'qa')
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check current master
+        if: github.event_name == 'workflow_run'
+        run: test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/master | cut -f1)"
+      - name: Check QA configuration
+        run: |
+          if grep -q '"id": "00000000000000000000000000000000"' apps/web/wrangler.jsonc; then
+            echo 'QA Hyperdrive ID is still a placeholder'
+            exit 1
+          fi
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build Worker
+        run: pnpm --filter @prometheus/web cf:build
+        env:
+          NEXT_PUBLIC_APP_URL: https://prometheus-qa.soveraign.solutions
+      - name: Deploy QA
+        run: pnpm exec wrangler deploy --env qa
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Check readiness
+        run: curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-connrefused https://prometheus-qa.soveraign.solutions/api/ready
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production' && vars.CLOUDFLARE_PRODUCTION_READY == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check Cloudflare credentials
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build Worker
+        run: pnpm --filter @prometheus/web cf:build
+        env:
+          NEXT_PUBLIC_APP_URL: https://prometheus-web.steven-palange.workers.dev
+      - name: Deploy production
+        run: pnpm exec wrangler deploy
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Check readiness
+        run: curl --fail --silent --show-error --retry 8 --retry-delay 5 --retry-connrefused https://prometheus-web.steven-palange.workers.dev/api/ready
