@@ -33,6 +33,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Check current master
+        if: github.event_name == 'workflow_run'
+        run: test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/master | cut -f1)"
       - name: Check QA configuration
         run: |
           if grep -q '"id": "00000000000000000000000000000000"' apps/web/wrangler.jsonc; then
