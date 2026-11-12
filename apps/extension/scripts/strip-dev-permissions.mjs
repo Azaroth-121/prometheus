@@ -36,3 +36,13 @@ writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 console.log(
   `Stripped ${removedPermissions} localhost host_permission(s) and ${hadKey ? 'removed' : 'found no'} key field from dist/manifest.json for the store build.`
 );
+
+// Chrome runs manifest content scripts as classic scripts, so content.js must be one
+// self-contained file: a shared chunk turns it into an ES module (`import … from`) and the
+// in-page badge silently never loads. This happens when the popup and content script import the
+// same module.
+const contentJs = readFileSync(path.join(distDir, 'content.js'), 'utf-8');
+if (/(^|[;\n])\s*import[\s{*]/.test(contentJs)) {
+  console.error('dist/content.js contains an import statement: keep src/content/ free of modules the popup also imports.');
+  process.exit(1);
+}
