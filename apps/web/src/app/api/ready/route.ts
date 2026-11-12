@@ -4,8 +4,6 @@ import { db } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-// Readiness includes the database path used by authenticated requests.
-// Keep the response generic because this route is available without a session.
 export async function GET() {
   try {
     await db.execute(sql`select 1`);
