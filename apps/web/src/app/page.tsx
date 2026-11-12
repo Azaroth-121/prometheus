@@ -33,12 +33,12 @@ export default function LandingPage() {
           your request — it only improves how you ask.
         </p>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col items-center gap-3">
           <Link href="/register">
-            <Button variant="primary">Get started</Button>
+            <Button variant="primary">Get started free</Button>
           </Link>
-          <Link href="/login">
-            <Button variant="secondary">Sign in</Button>
+          <Link href="/login" className="text-sm text-ink-muted underline hover:text-ink">
+            Already have an account? Sign in
           </Link>
         </div>
       </div>
@@ -55,6 +55,13 @@ export default function LandingPage() {
 {AFTER}
         </pre>
       </Card>
+
+      <footer className="flex flex-wrap items-center justify-center gap-4 text-xs text-ink-muted">
+        <Link href="/privacy" className="hover:text-ink">Privacy</Link>
+        <Link href="/terms" className="hover:text-ink">Terms</Link>
+        <Link href="/cookie-policy" className="hover:text-ink">Cookies</Link>
+        <Link href="/acceptable-use" className="hover:text-ink">Acceptable use</Link>
+      </footer>
     </main>
   );
 }
