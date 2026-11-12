@@ -22,6 +22,17 @@ const distDir = fileURLToPath(new URL('../dist', import.meta.url));
 const manifestPath = path.join(distDir, 'manifest.json');
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+const apiBase = process.env.VITE_API_BASE_URL;
+if (!apiBase) {
+  throw new Error('VITE_API_BASE_URL is required for a store build.');
+}
+const apiUrl = new URL(apiBase);
+if (apiUrl.protocol !== 'https:' || apiUrl.pathname !== '/' || apiUrl.search || apiUrl.hash) {
+  throw new Error('VITE_API_BASE_URL must be an HTTPS origin.');
+}
+if (!(manifest.host_permissions ?? []).includes(`${apiUrl.origin}/*`)) {
+  throw new Error('The store manifest does not permit the configured API origin.');
+}
 
 const beforePermissions = manifest.host_permissions?.length ?? 0;
 manifest.host_permissions = (manifest.host_permissions ?? []).filter(
@@ -33,6 +44,16 @@ const hadKey = 'key' in manifest;
 delete manifest.key;
 
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+const popupHtml = readFileSync(path.join(distDir, 'popup/index.html'), 'utf-8');
+const popupScripts = [...popupHtml.matchAll(/assets\/[^"']+\.js/g)].map(([file]) => file);
+if (popupScripts.length === 0) {
+  throw new Error('The store popup has no JavaScript bundle.');
+}
+for (const file of ['background.js', ...popupScripts]) {
+  if (!readFileSync(path.join(distDir, file), 'utf-8').includes(apiUrl.origin)) {
+    throw new Error(`${file} does not contain the configured API origin.`);
+  }
+}
 console.log(
   `Stripped ${removedPermissions} localhost host_permission(s) and ${hadKey ? 'removed' : 'found no'} key field from dist/manifest.json for the store build.`
 );
