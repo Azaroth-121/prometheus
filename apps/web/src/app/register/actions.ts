@@ -28,20 +28,46 @@ export async function registerAction(
 
   const email = String(formData.get('email') ?? '').trim();
   const password = String(formData.get('password') ?? '');
+  const displayName = String(formData.get('displayName') ?? '').trim();
+  const phone = String(formData.get('phone') ?? '').trim();
+  const companyName = String(formData.get('companyName') ?? '').trim();
+  const referralSource = String(formData.get('referralSource') ?? '').trim();
 
   if (!email || password.length < 8) {
     return { error: 'A valid email and a password of at least 8 characters are required.', success: false };
   }
+  if (!displayName || !phone || !companyName || !referralSource) {
+    return { error: 'Name, phone, company, and how you heard about us are all required.', success: false };
+  }
 
   let verificationToken: string;
   try {
-    const result = await signUpWithPassword(db, { email, password });
+    const result = await signUpWithPassword(db, { email, password, displayName, phone, companyName, referralSource });
     verificationToken = result.verificationToken;
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : 'Could not create the account.',
       success: false,
     };
+  }
+
+  // Fire-and-forget notification so sales/support knows immediately when
+  // someone signs up -- same optional-webhook pattern as the organization
+  // invite email (apps/web/src/app/dashboard/organization/actions.ts):
+  // reads straight from process.env rather than env.ts's required() getter,
+  // since this is a nice-to-have notification, not something sign-up itself
+  // should ever fail over.
+  const signupWebhookUrl = process.env.MAKE_SIGNUP_NOTIFICATION_WEBHOOK_URL;
+  if (signupWebhookUrl) {
+    try {
+      await fetch(signupWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name: displayName, phone, company_name: companyName, referral_source: referralSource }),
+      });
+    } catch {
+      // Best-effort -- a notification failure must never block sign-up.
+    }
   }
 
   // Same Make.com-webhook-sends-the-email pattern already used for expiry
