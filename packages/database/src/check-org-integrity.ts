@@ -1,6 +1,5 @@
 import { Client } from 'pg';
 
-/** Read-only, point-in-time checks for E0 and database cutovers. */
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL is required.');
