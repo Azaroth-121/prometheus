@@ -58,14 +58,11 @@ export default async function AdminOverviewPage() {
       .orderBy(sql`sum(${optimizationRequests.estimatedCost}) desc`),
   ]);
 
-  // E0 can leave the same provider subscription in both tables. Count it once.
   const orgIds = new Set(orgRows.map((row) => row.id));
   const all = [
     ...orgRows.map((row) => ({ ...row, scope: 'Organization' })),
     ...userRows.filter((row) => !orgIds.has(row.id)).map((row) => ({ ...row, scope: 'Individual' })),
   ];
-  // Match the billing access path: an active status with an expired period
-  // does not grant a paid plan and should not contribute to monthly value.
   const active = all.filter((row) => row.status === 'active' && row.periodEnd > now);
   const monthlyValue = active.filter((row) => row.currency.toLowerCase() === 'usd').reduce((sum, row) => sum + Number(row.price), 0);
   const mix = new Map<string, number>();
