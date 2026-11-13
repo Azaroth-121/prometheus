@@ -31,6 +31,11 @@ export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   email: text('email').notNull().unique(),
   displayName: text('display_name'),
+  // Lead-capture fields, required in the registration form for new
+  // signups but nullable here -- existing rows predate them.
+  phone: text('phone'),
+  companyName: text('company_name'),
+  referralSource: text('referral_source'),
   status: text('status', { enum: ['active', 'suspended', 'deleted'] }).notNull().default('active'),
   role: text('role', { enum: ['user', 'support', 'analyst', 'admin', 'super_admin'] })
     .notNull()

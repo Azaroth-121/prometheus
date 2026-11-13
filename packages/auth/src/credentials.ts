@@ -13,6 +13,9 @@ export interface SignUpParams {
   email: string;
   password: string;
   displayName?: string;
+  phone?: string;
+  companyName?: string;
+  referralSource?: string;
 }
 
 export interface SignInParams {
@@ -59,6 +62,9 @@ export async function signUpWithPassword(
     .values({
       email: params.email,
       displayName: params.displayName ?? null,
+      phone: params.phone ?? null,
+      companyName: params.companyName ?? null,
+      referralSource: params.referralSource ?? null,
       passwordHash,
       emailVerificationToken: verificationToken,
       emailVerificationExpiresAt: verificationExpiresAt,
