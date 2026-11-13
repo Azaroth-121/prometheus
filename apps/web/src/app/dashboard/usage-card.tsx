@@ -1,6 +1,7 @@
 import { getUsageSummary } from '@prometheus/billing';
 import { Card } from '@prometheus/ui';
 import { db } from '@/lib/db';
+import { UsageWarning } from './usage-warning';
 
 function ProgressBar({ used, limit }: { used: number; limit: number }) {
   const pct = limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
@@ -15,33 +16,36 @@ export async function UsageCard({ userId }: { userId: string }) {
   const usage = await getUsageSummary(db, userId);
 
   return (
-    <Card className="flex flex-col gap-3">
-      <div>
-        <p className="text-ink-muted">Usage this period</p>
-        <p className="text-sm text-ink">
-          {usage.billing_scope === 'organization'
-            ? `${usage.organization_name} shared allowance`
-            : 'Your individual allowance'}
-        </p>
-      </div>
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between text-sm">
-          <span className="text-ink">Requests</span>
-          <span className="text-ink-muted">
-            {usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}
-          </span>
+    <>
+      <UsageWarning usage={usage} />
+      <Card className="flex flex-col gap-3">
+        <div>
+          <p className="text-ink-muted">Usage this period</p>
+          <p className="text-sm text-ink">
+            {usage.billing_scope === 'organization'
+              ? `${usage.organization_name} shared allowance`
+              : 'Your individual allowance'}
+          </p>
         </div>
-        <ProgressBar used={usage.requests_used} limit={usage.requests_limit} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between text-sm">
-          <span className="text-ink">Tokens</span>
-          <span className="text-ink-muted">
-            {usage.tokens_used.toLocaleString()} / {usage.tokens_limit.toLocaleString()}
-          </span>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-ink">Requests</span>
+            <span className="text-ink-muted">
+              {usage.requests_used.toLocaleString()} / {usage.requests_limit.toLocaleString()}
+            </span>
+          </div>
+          <ProgressBar used={usage.requests_used} limit={usage.requests_limit} />
         </div>
-        <ProgressBar used={usage.tokens_used} limit={usage.tokens_limit} />
-      </div>
-    </Card>
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-ink">Tokens</span>
+            <span className="text-ink-muted">
+              {usage.tokens_used.toLocaleString()} / {usage.tokens_limit.toLocaleString()}
+            </span>
+          </div>
+          <ProgressBar used={usage.tokens_used} limit={usage.tokens_limit} />
+        </div>
+      </Card>
+    </>
   );
 }

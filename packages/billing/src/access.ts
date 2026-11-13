@@ -145,6 +145,9 @@ export interface UsageCheckResult {
   allowed: boolean;
   exceeded: 'requests' | 'tokens' | null;
   remainingRequests: number;
+  /** Usage counted so far this period, before the request being checked. */
+  requestsUsed: number;
+  tokensUsed: number;
 }
 
 /** Thrown inside `withBillingScopeLock`'s callback to reject the transaction and surface why. */
@@ -181,15 +184,17 @@ export async function checkUsageAgainstPlan(
   planInfo: CurrentPlanInfo
 ): Promise<UsageCheckResult> {
   const usage = await getPeriodUsage(db, userId, planInfo);
+  const used = { requestsUsed: usage.requests, tokensUsed: usage.tokens };
 
   if (usage.requests >= planInfo.monthlyRequestLimit) {
-    return { allowed: false, exceeded: 'requests', remainingRequests: 0 };
+    return { allowed: false, exceeded: 'requests', remainingRequests: 0, ...used };
   }
   if (usage.tokens >= planInfo.monthlyTokenLimit) {
     return {
       allowed: false,
       exceeded: 'tokens',
       remainingRequests: Math.max(planInfo.monthlyRequestLimit - usage.requests, 0),
+      ...used,
     };
   }
 
@@ -197,6 +202,7 @@ export async function checkUsageAgainstPlan(
     allowed: true,
     exceeded: null,
     remainingRequests: Math.max(planInfo.monthlyRequestLimit - usage.requests, 0),
+    ...used,
   };
 }
 
