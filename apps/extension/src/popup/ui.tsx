@@ -129,6 +129,15 @@ export function UsagePill({ used, limit }: { used: number; limit: number }) {
   );
 }
 
+/** The popup's version of apps/web's dashboard org pill (E0.5): the active org's name, or "Personal". */
+export function OrgBadge({ label }: { label: string }) {
+  return (
+    <span title={label} className="min-w-0 truncate rounded-full border border-line bg-surface px-2 py-0.5 text-[12px] font-medium text-ink-muted">
+      {label}
+    </span>
+  );
+}
+
 export function Menu({ label, items }: { label: string; items: { label: string; href?: string; onSelect?: () => void }[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
