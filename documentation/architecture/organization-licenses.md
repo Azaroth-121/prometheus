@@ -76,7 +76,7 @@ Seat counts depend on the Stripe webhook being reliable, so the known webhook is
 
 | Piece | Where |
 |---|---|
-| Columns and backfill | `packages/database/drizzle/0007_add_organization_licenses.sql` |
+| Columns and backfill | `packages/database/drizzle/0008_add_organization_licenses.sql` |
 | Checkout quantity and bounds | `parseLicenseQuantity` in `packages/billing/src/licenses.ts`, `/api/billing/checkout` |
 | Assign / remove / reassign, summary, lock | `packages/billing/src/licenses.ts` |
 | Pool = plan limits x licenses | `getCurrentPlanInfo` in `packages/billing/src/access.ts` |
