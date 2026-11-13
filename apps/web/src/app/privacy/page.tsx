@@ -21,9 +21,12 @@ export default function PrivacyPage() {
         <h2 className="text-lg font-semibold text-ink">Information we collect</h2>
         <ul className="list-disc pl-5 flex flex-col gap-1">
           <li>
-            <strong>Account information:</strong> the email address and password you provide when
-            you register. Passwords are stored as salted hashes — we never store or can recover
-            your plaintext password.
+            <strong>Account information:</strong> the email address, password, full name, phone
+            number, company name, and how you heard about us that you provide when you register.
+            Passwords are stored as salted hashes — we never store or can recover your plaintext
+            password. Your name, phone number, and company are used to follow up with you about
+            your account and, where relevant, to tailor sales outreach — never sold to third
+            parties.
           </li>
           <li>
             <strong>Prompt content:</strong> the text you submit for optimization is sent to
