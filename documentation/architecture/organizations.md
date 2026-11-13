@@ -19,7 +19,7 @@ Apply `packages/database/drizzle/0005_add_organizations.sql` after the existing 
 - Admin: organization settings plus regular-member invitation/removal.
 - Billing: shared billing only.
 - Member: organization usage and read access to the member dashboard.
-- Platform `admin`/`super_admin`: read-only organization, membership, usage, subscription, and audit oversight under `/admin`.
+- Platform `admin`/`super_admin`: organization, membership, usage, subscription, and audit oversight under `/admin`, including search and each organization's billing state (C.4). They can also suspend or reactivate an organization, with a required reason that goes to the audit log. A suspended organization drops out of every membership and billing-scope check, so members can't select, manage or bill against it; Stripe billing is not touched.
 
 All mutations are server actions or route handlers that resolve the authenticated profile and membership again. UI visibility is convenience only and is not an authorization boundary.
 
