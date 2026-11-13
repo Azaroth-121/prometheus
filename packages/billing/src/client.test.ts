@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import Stripe from 'stripe';
-import { changeSubscriptionQuantity, constructWebhookEvent, createCheckoutSession, createStripeClient } from './client';
+import {
+  changeSubscriptionQuantity,
+  constructWebhookEvent,
+  createCheckoutSession,
+  createStripeClient,
+  formatInvoiceAmount,
+  listInvoices,
+} from './client';
 
 const SECRET = 'whsec_test_secret';
 
@@ -113,5 +120,49 @@ describe('changeSubscriptionQuantity', () => {
     await changeSubscriptionQuantity(stripe, 'sub_1', 10);
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('listInvoices', () => {
+  function invoice(overrides: Partial<Stripe.Invoice>) {
+    return {
+      id: 'in_1',
+      number: 'ABC-0001',
+      created: 1_790_000_000,
+      total: 4999,
+      currency: 'usd',
+      status: 'paid',
+      hosted_invoice_url: 'https://invoice.stripe.test/i/1',
+      invoice_pdf: 'https://invoice.stripe.test/i/1/pdf',
+      ...overrides,
+    };
+  }
+
+  it("lists the customer's finalized invoices and leaves out drafts", async () => {
+    const list = vi.fn().mockResolvedValue({ data: [invoice({}), invoice({ id: 'in_2', status: 'draft' })] });
+    const stripe = { invoices: { list } } as unknown as Stripe;
+
+    const result = await listInvoices(stripe, 'cus_1');
+
+    expect(list).toHaveBeenCalledWith({ customer: 'cus_1', limit: 12 });
+    expect(result).toEqual([
+      {
+        id: 'in_1',
+        number: 'ABC-0001',
+        createdAt: new Date(1_790_000_000 * 1000),
+        total: 4999,
+        currency: 'usd',
+        status: 'paid',
+        hostedInvoiceUrl: 'https://invoice.stripe.test/i/1',
+        pdfUrl: 'https://invoice.stripe.test/i/1/pdf',
+      },
+    ]);
+  });
+});
+
+describe('formatInvoiceAmount', () => {
+  it('uses the currency minor unit', () => {
+    expect(formatInvoiceAmount(4999, 'usd')).toBe('$49.99');
+    expect(formatInvoiceAmount(1999, 'jpy')).toBe('¥1,999');
   });
 });

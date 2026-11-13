@@ -3,13 +3,20 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getActiveOrganization, getCurrentProfile, getUserOrganizations } from '@prometheus/auth';
-import { getCurrentPlanInfo, getLicenseSummary, getOrganizationMemberUsage, getUsageSummary } from '@prometheus/billing';
 import {
-  adminAuditLogs,
-  organizationInvitations,
-  organizationMembers,
-  profiles,
-} from '@prometheus/database';
+  filterMembers,
+  formatLastActive,
+  getCurrentPlanInfo,
+  getLicenseSummary,
+  getOrganizationMemberReport,
+  getUsageSummary,
+  isLicenseUnused,
+  isMemberFilterActive,
+  memberFilterQuery,
+  parseMemberFilter,
+  UNUSED_LICENSE_DAYS,
+} from '@prometheus/billing';
+import { adminAuditLogs, organizationInvitations, profiles } from '@prometheus/database';
 import { Button, Card, Input } from '@prometheus/ui';
 import {
   assignLicenseAction,
@@ -30,7 +37,13 @@ function roleLabel(role: string) {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-export default async function OrganizationPage() {
+const [UNUSED_DAYS] = UNUSED_LICENSE_DAYS;
+
+export default async function OrganizationPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const session = await auth();
   const profile = session?.user?.id ? await getCurrentProfile(db, session.user.id) : null;
   if (!profile) return null;
@@ -78,21 +91,7 @@ export default async function OrganizationPage() {
 
   const canManage = activeOrganization.role === 'owner' || activeOrganization.role === 'admin';
   const isOwner = activeOrganization.role === 'owner';
-  const [members, invitations, auditEvents, plan, usage, licenses] = await Promise.all([
-    db
-      .select({
-        id: organizationMembers.id,
-        userId: organizationMembers.userId,
-        role: organizationMembers.role,
-        email: profiles.email,
-        displayName: profiles.displayName,
-        joinedAt: organizationMembers.createdAt,
-        licenseAssignedAt: organizationMembers.licenseAssignedAt,
-      })
-      .from(organizationMembers)
-      .innerJoin(profiles, eq(profiles.id, organizationMembers.userId))
-      .where(eq(organizationMembers.organizationId, activeOrganization.id))
-      .orderBy(organizationMembers.createdAt),
+  const [invitations, auditEvents, plan, usage, licenses] = await Promise.all([
     canManage
       ? db
           .select()
@@ -124,9 +123,13 @@ export default async function OrganizationPage() {
     getUsageSummary(db, profile.id),
     getLicenseSummary(db, activeOrganization.id),
   ]);
-  const memberUsage = await getOrganizationMemberUsage(db, activeOrganization.id, plan.periodStart);
-  const usageByUser = new Map(memberUsage.map((row) => [row.userId, row]));
+  const members = await getOrganizationMemberReport(db, activeOrganization.id, plan.periodStart);
   const unlicensedMembers = members.filter((member) => !member.licenseAssignedAt);
+  const now = new Date();
+  const filter = parseMemberFilter(await searchParams);
+  const filtering = isMemberFilterActive(filter);
+  const shownMembers = filterMembers(members, filter, now);
+  const unusedCount = members.filter((member) => isLicenseUnused(member, UNUSED_DAYS, now)).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -186,6 +189,17 @@ export default async function OrganizationPage() {
         </Card>
       )}
 
+      {canManage && unusedCount > 0 && filter.license !== `unused-${UNUSED_DAYS}` && (
+        <Card className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-ink">
+            {unusedCount} licensed {unusedCount === 1 ? 'member hasn\'t' : 'members haven\'t'} used Prometheus in {UNUSED_DAYS}+ days. You can take back unused licenses and give them to someone else.
+          </p>
+          <Link href={`/dashboard/organization?license=unused-${UNUSED_DAYS}`} className="shrink-0 text-glow-cyan hover:underline">
+            Show them
+          </Link>
+        </Card>
+      )}
+
       {canManage && (
         <Card className="flex flex-col gap-4">
           <div><h2 className="font-display text-lg font-semibold text-ink">Invite a member</h2><p className="text-sm text-ink-muted">Invitations expire after seven days.</p></div>
@@ -209,21 +223,66 @@ export default async function OrganizationPage() {
       )}
 
       <Card className="overflow-hidden p-0">
-        <div className="border-b border-line p-4"><h2 className="font-display text-lg font-semibold text-ink">Members and usage</h2></div>
+        <div className="flex flex-col gap-3 border-b border-line p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold text-ink">Members and usage</h2>
+            <div className="flex items-baseline gap-4 text-sm">
+              <p className="text-ink-muted">
+                {filtering ? `Showing ${shownMembers.length} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
+              </p>
+              {canManage && (
+                <a href={`/api/organization/members/export${memberFilterQuery(filter)}`} className="text-glow-cyan hover:underline">
+                  Download CSV
+                </a>
+              )}
+            </div>
+          </div>
+          <form method="get" className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <Input name="q" type="search" defaultValue={filter.query} placeholder="Search name or email" aria-label="Search members" maxLength={100} />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+              <select name="role" defaultValue={filter.role} aria-label="Role" className="rounded border border-line bg-surface px-2 py-2 text-sm text-ink">
+                <option value="all">All roles</option>
+                <option value="owner">Owner</option>
+                <option value="admin">Admin</option>
+                <option value="member">Member</option>
+                <option value="billing">Billing</option>
+              </select>
+              <select name="license" defaultValue={filter.license} aria-label="License" className="rounded border border-line bg-surface px-2 py-2 text-sm text-ink">
+                <option value="all">All licenses</option>
+                <option value="licensed">Licensed</option>
+                <option value="unlicensed">No license</option>
+                {UNUSED_LICENSE_DAYS.map((days) => <option key={days} value={`unused-${days}`}>Unused {days}+ days</option>)}
+              </select>
+              <Button type="submit" variant="secondary">Filter</Button>
+              {filtering && (
+                <Link href="/dashboard/organization" className="self-center whitespace-nowrap text-sm text-ink-muted hover:text-ink">
+                  Clear
+                </Link>
+              )}
+            </div>
+          </form>
+        </div>
         <div className="divide-y divide-line">
-          {members.map((member) => {
-            const memberUsageRow = usageByUser.get(member.userId);
+          {shownMembers.length === 0 && <p className="p-4 text-sm text-ink-muted">No members match this filter.</p>}
+          {shownMembers.map((member) => {
+            const unused = isLicenseUnused(member, UNUSED_DAYS, now);
             const editable = canManage && member.role !== 'owner' && member.userId !== profile.id;
             return (
-              <div key={member.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={member.memberId} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="flex items-center gap-2 font-medium text-ink">
+                  <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
                     {member.displayName || member.email}
                     <span className={`rounded-full px-2 py-0.5 text-xs font-normal ${member.licenseAssignedAt ? 'bg-glow/20 text-ink' : 'bg-white/10 text-ink-muted'}`}>
                       {member.licenseAssignedAt ? 'Licensed' : 'No license'}
                     </span>
+                    {canManage && unused && (
+                      <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs font-normal text-amber-400">Unused {UNUSED_DAYS}+ days</span>
+                    )}
                   </p>
-                  <p className="text-sm text-ink-muted">{member.email} - {roleLabel(member.role)} - {memberUsageRow?.requests ?? 0} requests / {(memberUsageRow?.tokens ?? 0).toLocaleString()} tokens</p>
+                  <p className="text-sm text-ink-muted">{member.email} - {roleLabel(member.role)} - {member.requestsThisPeriod} requests / {member.tokensThisPeriod.toLocaleString()} tokens</p>
+                  {canManage && <p className="text-sm text-ink-muted">Last active: {formatLastActive(member.lastActiveAt, now)}</p>}
                 </div>
                 <div className="flex flex-col gap-2 sm:items-end">
                 {canManage && (
@@ -233,16 +292,16 @@ export default async function OrganizationPage() {
                       <>
                         <form action={removeLicenseAction}>
                           <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                          <input type="hidden" name="memberId" value={member.id} />
+                          <input type="hidden" name="memberId" value={member.memberId} />
                           <Button type="submit" variant="ghost">Remove</Button>
                         </form>
                         {unlicensedMembers.length > 0 && (
                           <form action={reassignLicenseAction} className="flex gap-2">
                             <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                            <input type="hidden" name="memberId" value={member.id} />
+                            <input type="hidden" name="memberId" value={member.memberId} />
                             <select name="toMemberId" defaultValue="" required aria-label="Move license to" className="rounded border border-line bg-surface px-2 text-sm text-ink">
                               <option value="" disabled>Move to...</option>
-                              {unlicensedMembers.map((other) => <option key={other.id} value={other.id}>{other.displayName || other.email}</option>)}
+                              {unlicensedMembers.map((other) => <option key={other.memberId} value={other.memberId}>{other.displayName || other.email}</option>)}
                             </select>
                             <Button type="submit" variant="ghost">Move</Button>
                           </form>
@@ -251,7 +310,7 @@ export default async function OrganizationPage() {
                     ) : (
                       <form action={assignLicenseAction}>
                         <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                        <input type="hidden" name="memberId" value={member.id} />
+                        <input type="hidden" name="memberId" value={member.memberId} />
                         <Button type="submit" variant="secondary" disabled={licenses.available < 1}>
                           Assign
                         </Button>
@@ -264,7 +323,7 @@ export default async function OrganizationPage() {
                     <span className="text-xs uppercase tracking-wide text-ink-muted">Member</span>
                     <form action={updateMemberRoleAction} className="flex gap-2">
                       <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                      <input type="hidden" name="memberId" value={member.id} />
+                      <input type="hidden" name="memberId" value={member.memberId} />
                       <select name="role" defaultValue={member.role} className="rounded border border-line bg-surface px-2 text-sm text-ink">
                         <option value="member">Member</option>
                         {isOwner && <option value="admin">Admin</option>}
@@ -274,13 +333,13 @@ export default async function OrganizationPage() {
                     </form>
                     <form action={removeMemberAction}>
                       <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                      <input type="hidden" name="memberId" value={member.id} />
+                      <input type="hidden" name="memberId" value={member.memberId} />
                       <Button type="submit" variant="ghost" className="text-red-400">Remove</Button>
                     </form>
                     {isOwner && (
                       <form action={transferOwnershipAction}>
                         <input type="hidden" name="organizationId" value={activeOrganization.id} />
-                        <input type="hidden" name="memberId" value={member.id} />
+                        <input type="hidden" name="memberId" value={member.memberId} />
                         <Button type="submit" variant="ghost">Make owner</Button>
                       </form>
                     )}

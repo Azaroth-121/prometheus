@@ -9,6 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '@prometheus/database';
 import {
   adminAuditLogs,
+  optimizationRequests,
   organizationMembers,
   organizations,
   organizationSubscriptions,
@@ -17,6 +18,7 @@ import {
   type Database,
 } from '@prometheus/database';
 import { assignLicense, getLicenseSummary, hasOrganizationLicense, LicenseError, reassignLicense, removeLicense } from './licenses';
+import { getOrganizationMemberReport } from './member-report';
 
 /**
  * Same real-Postgres setup as access.test.ts: the cap on assigned licenses is
@@ -208,5 +210,40 @@ describe('organization license assignment', () => {
     await expect(assignLicense(db, change(first.organizationId, first.ownerId, second.members[1]!.id))).rejects.toThrow(
       'not a member of this organization'
     );
+  });
+
+  it("reports each member's last activity and usage in this organization", async () => {
+    const { organizationId, ownerId, members } = await seedOrganization(2, 2);
+    const [, active, idle] = members;
+    await assignLicense(db, change(organizationId, ownerId, active!.id));
+    const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const request = (userId: string, createdAt: Date, inOrganization = true) => ({
+      userId,
+      organizationId: inOrganization ? organizationId : null,
+      clientRequestId: crypto.randomUUID(),
+      source: 'test',
+      mode: 'standard',
+      promptVersion: 'v1',
+      model: 'test-model',
+      inputCharacterCount: 10,
+      inputTokens: 100,
+      outputTokens: 50,
+      createdAt,
+    });
+    await db.insert(optimizationRequests).values([
+      request(active!.userId, daysAgo(10)),
+      request(active!.userId, daysAgo(2)),
+      // Personal use doesn't count as activity in the organization.
+      request(idle!.userId, daysAgo(1), false),
+    ]);
+
+    const report = await getOrganizationMemberReport(db, organizationId, daysAgo(5).toISOString());
+    const byMember = new Map(report.map((row) => [row.memberId, row]));
+
+    expect(report.map((row) => row.memberId)).toEqual(members.map((row) => row.id));
+    expect(byMember.get(active!.id)).toMatchObject({ requestsThisPeriod: 1, tokensThisPeriod: 150 });
+    expect(byMember.get(active!.id)?.lastActiveAt?.getTime()).toBeCloseTo(daysAgo(2).getTime(), -4);
+    expect(byMember.get(active!.id)?.licenseAssignedAt).toBeInstanceOf(Date);
+    expect(byMember.get(idle!.id)).toMatchObject({ lastActiveAt: null, licenseAssignedAt: null, requestsThisPeriod: 0 });
   });
 });
