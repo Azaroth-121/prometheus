@@ -1,6 +1,6 @@
 -- Organization licenses (ADR-004, documentation/architecture/organization-licenses.md).
--- Numbered 0007 because 0006 is taken by the refresh-token rotation migration
--- in review. Apply after 0005_add_organizations.sql.
+-- Numbered 0008 because 0006 (refresh-token rotation) and 0007 (signup lead
+-- fields) are taken. Needs 0005_add_organizations.sql; doesn't depend on 0006 or 0007.
 
 -- Licenses purchased: the Stripe subscription item's quantity, written by the
 -- webhook. Existing rows were all checked out with quantity 1.
