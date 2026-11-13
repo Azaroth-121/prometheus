@@ -21,7 +21,7 @@ Personal (individual) plans get the banner but no email.
 - `/api/v1/optimize` checks the usage counted after each request (`apps/web/src/lib/usage-alerts.ts`).
   The email goes out as the line is crossed, not from the daily cron, which is off until the
   Cloudflare cutover.
-- `organization_usage_alerts` (migration `0008`) records each alert. A threshold isn't sent
+- `organization_usage_alerts` (migration `0009`) records each alert. A threshold isn't sent
   again while a row for it (or a higher one) exists since the usage period started (the Stripe
   billing period for paid plans, a rolling 30 days on Free) for a pool of the same size. Buying
   more licenses makes a new pool, so it can be alerted again when that fills up.

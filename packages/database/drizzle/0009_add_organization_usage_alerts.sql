@@ -1,6 +1,6 @@
 -- Usage alerts (C.5, documentation/architecture/usage-alerts.md): one row per
 -- alert emailed to an organization's owner and billing managers when its
--- shared pool reaches 80% or 100%. Apply after 0007_add_organization_licenses.sql.
+-- shared pool reaches 80% or 100%. Apply after 0008_add_organization_licenses.sql.
 --
 -- A row is "already alerted" for the rest of the usage period while the pool
 -- is the same size, so each threshold is emailed once per period -- and again
