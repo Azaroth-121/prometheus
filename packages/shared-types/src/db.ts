@@ -7,6 +7,9 @@ export interface Profile {
   id: string;
   email: string;
   display_name: string | null;
+  phone: string | null;
+  company_name: string | null;
+  referral_source: string | null;
   status: AccountStatus;
   role: UserRole;
   created_at: string;
