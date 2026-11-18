@@ -30,8 +30,9 @@ export default function RegisterPage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     const form = event.currentTarget;
-    const email = String(new FormData(form).get('email') ?? '');
-    const password = String(new FormData(form).get('password') ?? '');
+    const data = new FormData(form);
+    const email = String(data.get('email') ?? '');
+    const password = String(data.get('password') ?? '');
 
     if (!EMAIL_PATTERN.test(email)) {
       event.preventDefault();
@@ -41,6 +42,11 @@ export default function RegisterPage() {
     if (password !== confirmPassword) {
       event.preventDefault();
       setClientError('Passwords do not match.');
+      return;
+    }
+    if (!data.get('displayName') || !data.get('phone') || !data.get('companyName') || !data.get('referralSource')) {
+      event.preventDefault();
+      setClientError('Name, phone, company, and how you heard about us are all required.');
       return;
     }
     setClientError(null);
@@ -76,6 +82,22 @@ export default function RegisterPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
           />
+          <Input type="text" name="displayName" placeholder="Full name" required />
+          <Input type="tel" name="phone" placeholder="Phone number" required />
+          <Input type="text" name="companyName" placeholder="Company" required />
+          <select
+            name="referralSource"
+            required
+            defaultValue=""
+            className="w-full rounded border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-glow focus:outline-none focus:ring-1 focus:ring-glow"
+          >
+            <option value="" disabled>How did you hear about us?</option>
+            <option value="search">Search engine</option>
+            <option value="social">Social media</option>
+            <option value="referral">Referral from a colleague or friend</option>
+            <option value="content">Blog, article, or video</option>
+            <option value="other">Other</option>
+          </select>
 
           {/* Honeypot: invisible to sighted users and skipped by tab order; a
               real person never fills this in, a bot that autofills every
