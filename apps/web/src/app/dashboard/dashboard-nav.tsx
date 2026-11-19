@@ -15,7 +15,7 @@ export function DashboardNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex gap-1 text-sm">
+    <nav className="-ml-3 flex min-w-0 flex-wrap gap-1 text-sm lg:ml-0">
       {NAV_LINKS.map((link) => {
         const active = pathname === link.href;
         return (

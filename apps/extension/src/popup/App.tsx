@@ -4,7 +4,7 @@ import type { OptimizationMode, OptimizeSuccessResponse, UsageSummary } from '@p
 import { isOptimizeError, OPTIMIZATION_MODES } from '@prometheus/shared-types';
 import { getUsage, optimize, submitOutcome } from '../lib/api';
 import { getStoredSession, signIn, signOut } from '../lib/session';
-import { Button, Chips, Field, Logo, Menu, Spinner, TextArea, UsagePill } from './ui';
+import { Button, Chips, Field, Logo, Menu, OrgBadge, Spinner, TextArea, UsagePill } from './ui';
 
 // Same origin the extension calls for the API -- apps/web serves both.
 const WEB_APP_URL: string = import.meta.env.VITE_API_BASE_URL;
@@ -28,11 +28,15 @@ async function findChatTab(): Promise<{ tabId: number; site: string } | null> {
 }
 
 function Header({ usage, menu }: { usage: UsageSummary | null; menu?: React.ReactNode }) {
+  // Which context the popup is acting in -- /api/v1/usage already reports the
+  // billing scope and active org name (E0.4).
+  const orgLabel = usage && (usage.billing_scope === 'organization' ? (usage.organization_name ?? 'Organization') : 'Personal');
   return (
     <header className="flex h-14 items-center gap-2 border-b border-line px-4">
       <Logo />
       <span className="text-[15px] font-semibold tracking-tight text-ink">Prometheus</span>
-      <span className="ml-auto flex items-center gap-3">
+      {orgLabel && <OrgBadge label={orgLabel} />}
+      <span className="ml-auto flex shrink-0 items-center gap-3">
         {usage && <UsagePill used={usage.requests_used} limit={usage.requests_limit} />}
         {menu}
       </span>
