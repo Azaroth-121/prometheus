@@ -3,6 +3,12 @@
 @tailwind utilities;
 
 @layer base {
+  /* The app is dark-only: tell the browser so its own controls (number
+     spinners, select lists, scrollbars) render dark instead of white. */
+  html {
+    color-scheme: dark;
+  }
+
   h1,
   h2,
   h3 {

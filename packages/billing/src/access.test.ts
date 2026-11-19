@@ -265,6 +265,29 @@ describe('usage and plan access control', () => {
     expect(info.type).toBe('organization');
   });
 
+  it('scales the organization shared allowance by the licenses purchased', async () => {
+    const ownerId = await seedUser();
+    const organization = await seedOrganization(ownerId);
+    const organizationPlan = await seedPlan({ monthlyRequestLimit: 500, monthlyTokenLimit: 1_000_000 });
+    await db.insert(organizationSubscriptions).values({
+      organizationId: organization.id,
+      providerCustomerId: 'org-customer',
+      providerSubscriptionId: `sub-${crypto.randomUUID()}`,
+      planId: organizationPlan.id,
+      status: 'active',
+      seatQuantity: 10,
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+    });
+
+    const info = await getCurrentPlanInfo(db, ownerId);
+
+    expect(info.licensedSeats).toBe(10);
+    expect(info.monthlyRequestLimit).toBe(5_000);
+    expect(info.monthlyTokenLimit).toBe(10_000_000);
+    expect(info.maximumInputLength).toBe(organizationPlan.maximumInputLength);
+  });
+
   it('does not count organization requests against an individual allowance', async () => {
     const userId = await seedUser();
     const organization = await seedOrganization(userId);
@@ -394,6 +417,7 @@ describe('usage and plan access control', () => {
       monthlyTokenLimit: 50_000,
       maximumInputLength: 2000,
       periodStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      licensedSeats: null,
       type: 'individual' as const,
       organizationId: null,
       organizationName: null,
